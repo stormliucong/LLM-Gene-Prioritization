@@ -1,0 +1,2 @@
+OPENAI_API_KEY = "xxx"
+REPLICATE_API_KEY = "xxx"
