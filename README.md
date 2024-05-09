@@ -1,6 +1,13 @@
 # LLM-Gene-Prioritization
 Assessing the Utility of Large Language Models for Phenotype-Driven Gene Prioritization in Rare Genetic Disorder Diagnosis
 
+### Features
+- We evaluated different zero-short prompts for phenotypic-driven gene ranking tasks using ChatGPT 
+- ChatGPT3.5-turbo, ChatGPT4, LLama2-Chat-7B, LLama2-Chat-13B, LLama2-Chat-70B were evaluated
+- Different input clinical features - HPO names and free-text were evaluated
+- Top 10 and Top 50 results were evaluated
+- We evaluated the variablity of ChatGPT by repeating the experiment three times
+- Another prompts are designed for llama2 base model to evaluate the performance of llama2.
 ### Get started
 - ```config.py```: You will need Replicate and OpenAI API keys to execute the experiments.
 - ```requirements.txt```: You will need the OpenAI library to execute the experiments.
