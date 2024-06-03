@@ -1,26 +1,33 @@
-from llama_index import PromptTemplate
+from llama_index.llms.openai import OpenAI
+import os
 
-instruction_str="""\
-    1. Convert the query to executable Python code using Pandas.
-    2. The final line of code should be a Python expression that can be called with the `eval()` function.
-    3. The code should represent a solution to the query.
-    4. The code should not contain any comments.
-    5. PRINT ONLY THE EXPRESSION.
-    5. Do not quote the expression."""
-    
-new_prompt = PromptTemplate(
-    """\
-        You are working with a pandas dataframe in Python.
-        The name of the dataframe is `df`.
-        This is the result of `print(df.head())`:
-        {df_str}
-    
-        Follow these intructions:
-        {instruction_str}
-        Query: {query_str}
-        
-        Expression: """
+index_dir = "./data/text-embedding-3-small-index"
+
+from llama_index.core import (
+    StorageContext,
+    VectorStoreIndex,
+    load_index_from_storage,
 )
+
+# Load Index
+if not os.path.exists(index_dir):
+   raise Exception(f"Index directory {index_dir} does not exist.")
+else:
+    # Rebuild storage context
+    storage_context = StorageContext.from_defaults(persist_dir=index_dir)
+    # Load index
+    index = load_index_from_storage(storage_context, index_id="text-embedding-3-small")  
+# try chaining basic prompts
+# https://docs.llamaindex.ai/en/stable/examples/pipeline/query_pipeline/
+phenotype_list = ["abnormality otitis"]
+phenotypes = ','.join(phenotype_list)
+prompt_str = f"Give top 10 genes likely caused the following phenotypes {phenotypes}. Output format example, [GENE1, GENE2, GENE3, ...]"
+# prompt_tmpl = PromptTemplate(prompt_str)
+
+llm = OpenAI(model="gpt-3.5-turbo")
+query_engine = index.as_query_engine(llm=llm, similarity_top_k=5)
+response = query_engine.query(prompt_str)
+print(str(response))
 
 
     

@@ -29,6 +29,8 @@ load_dotenv()
 Settings.llm = OpenAI(model="gpt-3.5-turbo")
 embed_model = OpenAIEmbedding(model="text-embedding-3-small",embed_batch_size=10)
 Settings.embed_model = embed_model
+Settings.chunk_size = 1028
+Settings.chunk_overlap = 100
 
 BATCH_SIZE = 2
 
@@ -37,11 +39,13 @@ reader = SimpleDirectoryReader("./data/files")
 docs = reader.load_data()
 logging.info(f"Loaded {len(docs)} documents.")
 
+# define index directory
 index_dir = "./data/text-embedding-3-small-index"
 # remove docs from alread indexed files
 indexed_files_log = './logs/text-embedding-3-small-indexed.txt'
 if os.path.exists(indexed_files_log):
     with open(indexed_files_log, "r") as f:
+        # this log file contains all the previously indexed files
         indexed_files_list = f.read().splitlines()
         indexed_files_list = [f.strip() for f in indexed_files_list]
     orignal_docs = docs.copy()
@@ -51,9 +55,9 @@ if os.path.exists(indexed_files_log):
 logging.info(f"Removed {len(indexed_files_list)} already indexed files.")
 logging.info(f"Remaining {len(docs)} documents to index.")
 
-# if len(docs) == 0:
-#     logging.info("No new documents to index.")
-#     exit()
+if len(docs) == 0:
+    logging.info("No new documents to index.")
+    exit()
 
 if not os.path.exists(index_dir):
     index = VectorStoreIndex.from_documents([])
@@ -90,17 +94,6 @@ for i in range(0, len(docs), BATCH_SIZE):
 with open(indexed_files_log, "w") as f:
     f.write('\n'.join(indexed_files_list))
 
-# try chaining basic prompts
-# https://docs.llamaindex.ai/en/stable/examples/pipeline/query_pipeline/
-phenotype_list = ["abnormality otitis"]
-phenotypes = ','.join(phenotype_list)
-prompt_str = f"Give top 10 genes likely caused the following phenotypes {phenotypes}. Output format example, [GENE1, GENE2, GENE3, ...]"
-# prompt_tmpl = PromptTemplate(prompt_str)
-
-llm = OpenAI(model="gpt-3.5-turbo")
-query_engine = index.as_query_engine(llm=llm, similarity_top_k=5)
-response = query_engine.query(prompt_str)
-print(str(response))
 
 
 
