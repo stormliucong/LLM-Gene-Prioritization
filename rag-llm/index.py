@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import json
 import logging
+import tqdm
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.core.node_parser import SimpleNodeParser
@@ -27,12 +28,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 load_dotenv()
 
 Settings.llm = OpenAI(model="gpt-3.5-turbo")
-embed_model = OpenAIEmbedding(model="text-embedding-3-small",embed_batch_size=10)
+embed_model = OpenAIEmbedding(model="text-embedding-3-small",embed_batch_size=1000)
 Settings.embed_model = embed_model
 Settings.chunk_size = 1028
 Settings.chunk_overlap = 100
 
-BATCH_SIZE = 2
+BATCH_SIZE = 1000
 
 
 reader = SimpleDirectoryReader("./data/files")
@@ -42,6 +43,7 @@ logging.info(f"Loaded {len(docs)} documents.")
 # define index directory
 index_dir = "./data/text-embedding-3-small-index"
 # remove docs from alread indexed files
+indexed_files_list = []
 indexed_files_log = './logs/text-embedding-3-small-indexed.txt'
 if os.path.exists(indexed_files_log):
     with open(indexed_files_log, "r") as f:
@@ -52,6 +54,10 @@ if os.path.exists(indexed_files_log):
     for doc in orignal_docs:
         if doc.metadata['file_name'] in indexed_files_list:
             docs.remove(doc)
+else:
+    # if folder not exist create one
+    if not os.path.exists('./logs'):
+        os.mkdir('./logs')
 logging.info(f"Removed {len(indexed_files_list)} already indexed files.")
 logging.info(f"Remaining {len(docs)} documents to index.")
 
@@ -71,7 +77,7 @@ else:
     index = load_index_from_storage(storage_context, index_id="text-embedding-3-small")    
 
 # Insert new documents by batch
-for i in range(0, len(docs), BATCH_SIZE):
+for i in tqdm(range(0, len(docs), BATCH_SIZE)):
     start = i
     end = min(i + BATCH_SIZE, len(docs))
     batch_docs = docs[start:end]
@@ -89,10 +95,11 @@ for i in range(0, len(docs), BATCH_SIZE):
         logging.error(e)
     # Persist the index after inserting the new document
     index.storage_context.persist(index_dir)
+    # save indexed_files_list to logs
+    with open(indexed_files_log, "w") as f:
+        f.write('\n'.join(indexed_files_list))
 
-# save indexed_files_list to logs
-with open(indexed_files_log, "w") as f:
-    f.write('\n'.join(indexed_files_list))
+
 
 
 
