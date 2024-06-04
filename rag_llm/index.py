@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import json
 import logging
-import tqdm
+from tqdm import tqdm
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 from llama_index.core.node_parser import SimpleNodeParser
@@ -28,7 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 load_dotenv()
 
 Settings.llm = OpenAI(model="gpt-3.5-turbo")
-embed_model = OpenAIEmbedding(model="text-embedding-3-small",embed_batch_size=1000)
+embed_model = OpenAIEmbedding(model="text-embedding-3-large",embed_batch_size=1000)
 Settings.embed_model = embed_model
 Settings.chunk_size = 1028
 Settings.chunk_overlap = 100
@@ -41,10 +41,10 @@ docs = reader.load_data()
 logging.info(f"Loaded {len(docs)} documents.")
 
 # define index directory
-index_dir = "./data/text-embedding-3-small-index"
+index_dir = "./data/text-embedding-3-large-index"
 # remove docs from alread indexed files
 indexed_files_list = []
-indexed_files_log = './logs/text-embedding-3-small-indexed.txt'
+indexed_files_log = './logs/text-embedding-3-large-indexed.txt'
 if os.path.exists(indexed_files_log):
     with open(indexed_files_log, "r") as f:
         # this log file contains all the previously indexed files
@@ -68,13 +68,13 @@ if len(docs) == 0:
 if not os.path.exists(index_dir):
     index = VectorStoreIndex.from_documents([])
     # save index to disk
-    index.set_index_id("text-embedding-3-small")
+    index.set_index_id("text-embedding-3-large")
     index.storage_context.persist(index_dir)
 else:
     # Rebuild storage context
     storage_context = StorageContext.from_defaults(persist_dir=index_dir)
     # Load index
-    index = load_index_from_storage(storage_context, index_id="text-embedding-3-small")    
+    index = load_index_from_storage(storage_context, index_id="text-embedding-3-large")    
 
 # Insert new documents by batch
 for i in tqdm(range(0, len(docs), BATCH_SIZE)):

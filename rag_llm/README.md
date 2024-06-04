@@ -9,6 +9,12 @@ mkdir data
 mkdir data/raw
 ```
 
+#### Create OpenAI API key file
+- Create a `.env` file 
+```sh
+OPENAI_API_KEY=sk-inputyouropenaiapikeyhere
+```
+
 #### Download hpo annotation
 - Download GENES_TO_PHENOTYPES [from hpo website](https://hpo.jax.org/data/annotations)
 - Upload `genes_to_phenotype.txt` to `./data/raw`
@@ -17,6 +23,7 @@ mkdir data/raw
 ```sh
 python break_files_by_gene.py
 ```
+
 
 #### Index files 
 ```sh
