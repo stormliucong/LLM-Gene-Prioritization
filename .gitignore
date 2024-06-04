@@ -167,6 +167,8 @@ data/input/HPO_names/*
 data/input/Original_data/*
 data/input/__MACOSX/*
 output_dir/*
+Experiment_new_gpt_output_dir/*
+Experiment_new_gpt_previous_dir/*
 previous_dir/*
 nohup.out
 

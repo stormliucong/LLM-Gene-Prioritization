@@ -8,16 +8,17 @@ import re
 from multiprocessing import pool, active_children
 import time 
 import argparse
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-
-def query_gpt(prompt, gpt_version, test, print_output = False):
+def query_gpt(prompt, gpt_version, test=True, print_output = False):
   logging.debug(f'querying gpt {gpt_version}')
   if test:
     return prompt + '.test.response'
   
-  openai.api_key = config.OPENAI_API_KEY
-  completions = openai.ChatCompletion.create( #a method that allows you to generate text-based chatbot responses using a pre-trained GPT language model.
+  completions = openai.chat.completions.create( #a method that allows you to generate text-based chatbot responses using a pre-trained GPT language model.
       model=gpt_version, 
       temperature = 0, #controls the level of randomness or creativity in the generated text; . A higher temperature value will result in a more diverse and creative output, as it increases the probability of sampling lower probability tokens. 
 #         max_tokens = 2000, #controls the maximum number of tokens (words or subwords) in the generated text.
@@ -33,9 +34,9 @@ def query_gpt(prompt, gpt_version, test, print_output = False):
   if print_output:
       logging.debug(completions)
 
-  gpt_response = completions.choices[0]['message']['content']
+  gpt_response = completions.choices[0].message.content
   # Return the first choice's text
-  return gpt_response
+  return str(gpt_response)
 
 def get_file_name(output_dir, sample,top_n, prompt, gpt_version, input_type, iteration):
   logging.debug(f'getting file name for {sample}')
@@ -60,9 +61,6 @@ def get_prompts(top_n, prompt, sample):
   if prompt == 'd':
     # Original + Role + Instruction
     content = f'Consider you are a genetic counselor. The phenotype description of the patient is {clinical_description}. Can you suggest a list of {top_n} possible genes to test? Please consider the phenotype gene relationship, and use the knowledge you have trained on. No need to access the real-time database to generate outcomes. Please return gene symbols as a comma-separated list. Example: "ABC1, BRAC2, BRAC1" or "Not Applicable" if you can not provide the result.'
-  if prompt == 'e':
-    # Original + Role + Instruction
-    content = f'Consider you are a genetic counselor. The phenotype description of the patient is {clinical_description}. Can you suggest a list of {top_n} possible genes to test? Please consider the phenotype gene relationship, and use the knowledge you have trained on. No need to access the real-time database to generate outcomes. Please return gene symbols as a comma-separated list. Example: "ABC1, BRAC2, BRAC1" or "Not Applicable" if you can not provide the result.'
   return content
 
 
@@ -70,40 +68,12 @@ def get_sample_list(input_type):
   logging.debug(f'getting sample list for {input_type}')
   # sample_list = [{"sample_id": 123, "true_gene": "ABC", "content": "muscular dystropy"}]
   # sample_list = [{"sample_id": 123, "true_gene": "ABC", "content": "patient diagnosed with muscular dystropy"}]
-  if input_type == 'hpo_concepts':
-    # get sample list for hpo input
-    data_folder = './Data/HPO_input/Original_data'
-    sample_list_hpo = []
-    with open(os.path.join(data_folder, 'probe_info')) as f:
-      for line in f:
-          line = line.strip()
-          # change multiple spaces or tabs to a single tab
-          while '  ' in line:
-              line = line.replace('  ', ' ')
-          line = line.replace(' ', '\t')
-          line = line.split('\t')
-          # get the first element
-          folder_name = line[0]
-          # get the second element
-          file_name = line[1]
-          # get the third element
-          true_gene = line[2]
-          sample_id = folder_name + '.' + file_name
-          sample_list_hpo.append({"sample_id": sample_id, "true_gene": true_gene})
-
-    for sample in sample_list_hpo:
-      folder_name, file_name = sample['sample_id'].split('.')
-      input_path = os.path.join('.', 'Data', 'HPO_input', 'HPO_names', folder_name, file_name)
-      with open(input_path) as f:
-        hpo_content = f.read()
-        sample['content'] = hpo_content.replace('\n',';')
-    return sample_list_hpo
   
   if input_type == 'free_text':
     # get sample list for free text input
-    data_folder = './Data/free_text_input'
+    data_folder = './data/input/'
 
-    free_text_df = pd.read_csv(os.path.join(data_folder, 'free_text_pmid_input.csv'))
+    free_text_df = pd.read_csv(os.path.join(data_folder, 'new_free_text_pmid_input.csv'))
     sample_list_free_text = []
     for index, row in free_text_df.iterrows():
       free_text = row['Free-text']
@@ -150,11 +120,11 @@ def gpt_worker(file):
 if __name__ == '__main__':
   # parse argument
   parser = argparse.ArgumentParser()
-  parser.add_argument('--probability_of_1', type=float, default=1.0, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
-  parser.add_argument('--output_dir', type=str, default='./Experiment_004subset', help='output directory')
-  parser.add_argument('--previous_dir', type=str, default='./Experiment_003subset', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
-  parser.add_argument('--cpu_number', type=int, default=16, help='number of cpu cores to use')
-  parser.add_argument('--log_file_name', type=str, default='experiment_gpt.log', help='log file name')
+  parser.add_argument('--probability_of_1', type=float, default=0.1, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
+  parser.add_argument('--output_dir', type=str, default='./Experiment_new_gpt_output_dir', help='output directory')
+  parser.add_argument('--previous_dir', type=str, default='./Experiment_new_gpt_previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
+  parser.add_argument('--cpu_number', type=int, default=4, help='number of cpu cores to use')
+  parser.add_argument('--log_file_name', type=str, default='experiment_new_gpt.log', help='log file name')
   args = parser.parse_args()
   
   
@@ -166,17 +136,21 @@ if __name__ == '__main__':
   
   # Probability of getting 1
   probability_of_1 = args.probability_of_1
-
   # List of choices (1 or 0)
   choices = [1, 0]
+  
   file_list = []
   output_dir = args.output_dir
+  if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
   previous_dir = args.previous_dir
-  top_n_list = ['10', '50']
-  prompt_list = ['a', 'b', 'c','d']
-  gpt_version_list = ['gpt-3.5-turbo', 'gpt-4']
+  if not os.path.exists(previous_dir):
+    os.makedirs(previous_dir)
+  top_n_list = ['10','50']
+  prompt_list = ['d']
+  gpt_version_list = ['gpt-3.5-turbo']
   iteration_list = ['1','2','3']
-  input_type_list = ['hpo_concepts', 'free_text']
+  input_type_list = ['free_text']
   for iteration in iteration_list:
     for input_type in input_type_list:
       sample_list = get_sample_list(input_type)
@@ -187,7 +161,7 @@ if __name__ == '__main__':
               file_name = get_file_name(output_dir, sample,top_n, prompt_id, gpt_version, input_type, iteration)
               history_file = get_file_name(previous_dir, sample,top_n, prompt_id, gpt_version, input_type, iteration)
               if os.path.exists(history_file) or os.path.exists(history_file + '.err'):
-                logging.debug(f'file {file_name} already exists, skipping')
+                logging.info(f'file {file_name} already exists, skipping')
                 continue
               random_flag = random.choices(choices, [probability_of_1, 1 - probability_of_1])[0]
               # random_flag = 1

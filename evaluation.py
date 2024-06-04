@@ -108,8 +108,8 @@ if __name__ == '__main__':
   
   # parse argument
   parser = argparse.ArgumentParser()
-  parser.add_argument('--input_dir', type=str, default='./Experiment_003subset', help='input directory. output directory from experiment_*.py')
-  parser.add_argument('--output_file', type=str, default='./Experiment_003subset_eval_table.csv', help='output file')
+  parser.add_argument('--input_dir', type=str, help='input directory. output directory from experiment_*.py')
+  parser.add_argument('--output_file', type=str, help='output file')
   parser.add_argument('--log_file_name', type=str, default='evaluation.log', help='log file name')
   args = parser.parse_args()
   
@@ -128,9 +128,9 @@ if __name__ == '__main__':
   mega_table_list = [["sample_id", "true_gene", "top_n", "prompt", "gpt_version", "input_type", "iteration", "gpt_response_error", "completeness", "accuracy", "structural_compliance"]]
   for file in os.listdir(output_dir):
     error, c, a, f = None, None, None, None
-    if file.endswith('.gpt.response') or file.endswith('.gpt.response.err'):
+    if file.endswith('.response') or file.endswith('.response.err'):
       logging.debug(file.split('__'))
-      m = re.match(r'(.+?).gpt.response*', file)
+      m = re.match(r'(.+?)\.(.+?).response*', file)
       sample_id, true_gene, top_n, prompt, gpt_version, input_type, iteration = m.group(1).split('__')
       true_gene = true_gene.upper()
       true_gene = true_gene.replace(" ", "")
@@ -146,7 +146,7 @@ if __name__ == '__main__':
         true_gene_symbol = hgnc_complete_df[hgnc_complete_df['other'] == true_gene]['symbol'].values[0]
         true_gene_alias = hgnc_complete_df[hgnc_complete_df['symbol'] == true_gene_symbol]['other'].values
           
-      if file.endswith('.gpt.response'):
+      if file.endswith('.response'):
         error = 0
         gpt_response = get_gpt_response(os.path.join(output_dir,file))
         all_symbol_list = list(set(hgnc_complete_df['other'].values))
