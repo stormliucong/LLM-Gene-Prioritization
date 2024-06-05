@@ -63,8 +63,27 @@ def get_prompts(top_n, prompt, sample):
     content = f'Consider you are a genetic counselor. The phenotype description of the patient is {clinical_description}. Can you suggest a list of {top_n} possible genes to test? Please consider the phenotype gene relationship, and use the knowledge you have trained on. No need to access the real-time database to generate outcomes. Please return gene symbols as a comma-separated list. Example: "ABC1, BRAC2, BRAC1" or "Not Applicable" if you can not provide the result.'
   if prompt == 'e':
     # Original + Role + Instruction
-    content = f'Consider you are a genetic counselor. The phenotype description of the patient is {clinical_description}. Can you suggest a list of {top_n} possible genes to test? Please consider the phenotype gene relationship, and use the knowledge you have trained on. No need to access the real-time database to generate outcomes. Please return gene symbols as a comma-separated list. Example: "ABC1, BRAC2, BRAC1" or "Not Applicable" if you can not provide the result.'
- 
+    few_shots = '''
+    Intruction: Question: Consider you are a genetic counselor. Given the phenotype description of the patient listed above. Suggest the top {top_n} genes to test. Provide the gene symbols in a “comma-separated list” or "Not Applicable" if no relevant genes are identified. 
+
+    Examples:
+    Phenotype: Neoplasm
+    Response: PTEN, BRCA1, BRCA2, TP53, KRAS, EGFR, MYC, PALB1, RB1, VHL
+    
+    Phenotype: Seizure, Hypotonia, Global developmental delay, Abnormal facial shape, Microcephaly, Mandibular prognathia, Severe global developmental delay
+    Response: SCN1A, MECP2, CDKL5, KCNQ2, STXBP1, ARX, FOXG1, PCDH19, TCF4, MEF2C
+    
+    Phenotype: Hello, World, Earth, Peace, Love, Toy, Hamburger, Salad, Apple, Google, Smoke, Drug
+    Response: Not Applicable
+    
+    Phenotype:
+    Response: Not Applicable    
+    '''
+    content = few_shots + f'''
+    Please answer:
+    Phenotype: {clinical_description}
+    Response: 
+    '''
   return content
 
 
@@ -153,9 +172,9 @@ def gpt_worker(file):
 if __name__ == '__main__':
   # parse argument
   parser = argparse.ArgumentParser()
-  parser.add_argument('--probability_of_1', type=float, default=0.1, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
+  parser.add_argument('--probability_of_1', type=float, default=0.25, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
   parser.add_argument('--output_dir', type=str, default='./Experiment_few_shot_gpt_output_dir', help='output directory')
-  parser.add_argument('--previous_dir', type=str, default='./Experiment_new_shot_gpt_previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
+  parser.add_argument('--previous_dir', type=str, default='./Experiment_few_shot_gpt_previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
   parser.add_argument('--cpu_number', type=int, default=4, help='number of cpu cores to use')
   parser.add_argument('--log_file_name', type=str, default='experiment_few_shot_gpt.log', help='log file name')
   args = parser.parse_args()

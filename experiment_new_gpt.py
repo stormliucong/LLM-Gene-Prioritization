@@ -120,7 +120,7 @@ def gpt_worker(file):
 if __name__ == '__main__':
   # parse argument
   parser = argparse.ArgumentParser()
-  parser.add_argument('--probability_of_1', type=float, default=0.1, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
+  parser.add_argument('--probability_of_1', type=float, default=1, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
   parser.add_argument('--output_dir', type=str, default='./Experiment_new_gpt_output_dir', help='output directory')
   parser.add_argument('--previous_dir', type=str, default='./Experiment_new_gpt_previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
   parser.add_argument('--cpu_number', type=int, default=4, help='number of cpu cores to use')
@@ -146,9 +146,9 @@ if __name__ == '__main__':
   previous_dir = args.previous_dir
   if not os.path.exists(previous_dir):
     os.makedirs(previous_dir)
-  top_n_list = ['10','50']
+  top_n_list = ['10']
   prompt_list = ['d']
-  gpt_version_list = ['gpt-3.5-turbo']
+  gpt_version_list = ['gpt-3.5-turbo', 'gpt-4']
   iteration_list = ['1','2','3']
   input_type_list = ['free_text']
   for iteration in iteration_list:
