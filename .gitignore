@@ -175,6 +175,9 @@ Experiment_few_shot_gpt_output_dir/*
 Experiment_few_shot_gpt_previous_dir/*
 Experiment_llama2_output_dir/*
 Experiment_llama2_previous_dir/*
+Experiment_gpt_output_dir/*
+Experiment_gpt_previous_dir/*
 previous_dir/*
 nohup.out
 
+__MACOSX/*

@@ -113,6 +113,9 @@ if __name__ == '__main__':
   parser.add_argument('--log_file_name', type=str, default='evaluation.log', help='log file name')
   args = parser.parse_args()
   
+  # Example Usage
+  # python evaluation.py --input_dir Experiment_gpt_previous_dir --output_file gpt_eval_table.csv --log_file_name gpt_evaluation.log
+  
   print(args.log_file_name)
    
   # add time stamp to logging
@@ -130,7 +133,8 @@ if __name__ == '__main__':
     error, c, a, f = None, None, None, None
     if file.endswith('.response') or file.endswith('.response.err'):
       logging.debug(file.split('__'))
-      m = re.match(r'(.+?)\.(.+?).response*', file)
+      m = re.match(r'(.*)\.(.+?)\.response*', file)
+      print(m.group(1))
       sample_id, true_gene, top_n, prompt, gpt_version, input_type, iteration = m.group(1).split('__')
       true_gene = true_gene.upper()
       true_gene = true_gene.replace(" ", "")
