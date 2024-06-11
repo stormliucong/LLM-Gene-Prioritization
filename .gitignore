@@ -160,8 +160,8 @@ cython_debug/
 #.idea/
 rag_llm/data/raw/*
 rag_llm/data/files/*
-rag_llm/data/text-embedding-3-small-index/*
-rag_llm/data/text-embedding-3-large-index/*
+rag_llm/data/*
+rag_llm/data/*
 rag_llm/logs/*
 data/input/HPO_names/*
 data/input/Original_data/*

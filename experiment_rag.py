@@ -21,9 +21,9 @@ def query_rag(prompt, gpt_version, test, print_output = False):
   if test:
     return prompt + '.test.response'
   
-  if gpt_version == 'text-embedding-3-small':
+  if gpt_version == 'text-embedding-3-small-genes':
     index = rag_query_small
-  if gpt_version == 'text-embedding-3-large':
+  if gpt_version == 'text-embedding-3-large-genes':
     index = rag_query_large
 
   response = index.query_rag(prompt)
@@ -112,8 +112,8 @@ if __name__ == '__main__':
   # parse argument
   parser = argparse.ArgumentParser()
   parser.add_argument('--probability_of_1', type=float, default=1, help='sample rate of the files to be processed. 1.0 means all files will be processed. 0.5 means 50% of the files will be processed.')
-  parser.add_argument('--output_dir', type=str, default='./output_dir', help='output directory')
-  parser.add_argument('--previous_dir', type=str, default='./previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
+  parser.add_argument('--output_dir', type=str, default='./Experiment_rag_output_dir', help='output directory')
+  parser.add_argument('--previous_dir', type=str, default='./Experiment_rag_previous_dir', help='# change this to your previous output directory. The program will check if the file exists in the previous directory. If it does, it will skip the file.')
   parser.add_argument('--log_file_name', type=str, default='experiment_rag.log', help='log file name')
   args = parser.parse_args()
   
@@ -138,10 +138,10 @@ if __name__ == '__main__':
     os.makedirs(previous_dir)
   top_n_list = ['10']
   prompt_list = ['d']
-  gpt_version_list = ['text-embedding-3-small', 'text-embedding-3-large']
+  gpt_version_list = ['text-embedding-3-small-genes', 'text-embedding-3-large-genes']
   llm_model = 'gpt-4'
-  rag_query_small = RagQuery(emb_model='text-embedding-3-small', llm_model=llm_model)
-  rag_query_large = RagQuery(emb_model='text-embedding-3-large', llm_model=llm_model)
+  rag_query_small = RagQuery(emb_model='text-embedding-3-small', llm_model=llm_model, by_gene=True)
+  rag_query_large = RagQuery(emb_model='text-embedding-3-large', llm_model=llm_model, by_gene=True)
   iteration_list = ['1','2','3']
   input_type_list = ['hpo_concepts']
   for iteration in iteration_list:

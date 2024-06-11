@@ -26,12 +26,14 @@ OPENAI_API_KEY=sk-inputyouropenaiapikeyhere
 #### Create files
 ```sh
 python break_files_by_gene.py
+python break_files_by_phenotype.py
 ```
 
 
 #### Index files 
 ```sh
-python index.py
+python index_with_gene.py
+python index_with_phenotype.py
 ```
 - Run this repeately until see `No new documents to index.` message.
 

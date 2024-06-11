@@ -12,13 +12,19 @@ from llama_index.core import Settings
 
 
 class RagQuery:
-    def __init__(self, emb_model, llm_model):
+    def __init__(self, emb_model, llm_model, by_gene=True):
         if emb_model == "text-embedding-3-small":
-            index_dir = "./rag_llm/data/text-embedding-3-small-index"
             index_id = "text-embedding-3-small"
+            if by_gene:
+                index_dir = "./rag_llm/data/text-embedding-3-small-index-gene"
+            else:
+                index_dir = "./rag_llm/data/text-embedding-3-small-index-phenotype"
         if emb_model == "text-embedding-3-large":
-            index_dir = "./rag_llm/data/text-embedding-3-large-index"
             index_id = "text-embedding-3-large"
+            if by_gene:
+                index_dir = "./rag_llm/data/text-embedding-3-large-index-gene"
+            else:
+                index_dir = "./rag_llm/data/text-embedding-3-large-index-phenotype"
         
         llm = OpenAI(model=llm_model)
         # Load Index
@@ -42,6 +48,6 @@ if __name__ == "__main__":
     top_n = 10
     clinical_description = 'The patient is a 45-year, with the following symptoms: shortness of breath, fatigue, and chest pain. The patient has a history of heart disease in the family.'
     content = f'Consider you are a genetic counselor. The phenotype description of the patient is {clinical_description}. Can you suggest a list of {top_n} possible genes to test? Please consider the phenotype gene relationship, and use the knowledge you have trained on. No need to access the real-time database to generate outcomes. Please return gene symbols as a comma-separated list. Example: "ABC1, BRAC2, BRAC1" or "Not Applicable" if you can not provide the result.'
-    large_index = RagQuery(emb_model="text-embedding-3-small", llm_model="gpt-4")
+    large_index = RagQuery(emb_model="text-embedding-3-large", llm_model="gpt-4", by_gene=True)
     response = large_index.query_rag(content)
     print(response)

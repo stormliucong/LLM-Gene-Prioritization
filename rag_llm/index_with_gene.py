@@ -20,6 +20,14 @@ from llama_index.core import PromptTemplate
 from llama_index.agent.openai import OpenAIAssistantAgent
 from llama_index.core.agent import ReActAgent
 
+from argparse import ArgumentParser
+import logging
+
+parser = ArgumentParser()
+parser.add_argument("--batch_size", type=int, default=1000)
+parser.add_argument("--model", type=str, default="text-embedding-3-small")
+args = parser.parse_args()
+
 
 
 
@@ -27,24 +35,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 
 load_dotenv()
 
+BATCH_SIZE = args.batch_size
+MODEL = args.model
+
 Settings.llm = OpenAI(model="gpt-3.5-turbo")
-embed_model = OpenAIEmbedding(model="text-embedding-3-large",embed_batch_size=1000)
+embed_model = OpenAIEmbedding(model=f"{MODEL}",embed_batch_size=1000)
 Settings.embed_model = embed_model
 Settings.chunk_size = 1028
 Settings.chunk_overlap = 100
 
-BATCH_SIZE = 1000
 
-
-reader = SimpleDirectoryReader("./data/files")
+reader = SimpleDirectoryReader("./data/files/genes")
 docs = reader.load_data()
 logging.info(f"Loaded {len(docs)} documents.")
 
 # define index directory
-index_dir = "./data/text-embedding-3-large-index"
+index_dir = f"./data/{MODEL}-index-gene"
 # remove docs from alread indexed files
 indexed_files_list = []
-indexed_files_log = './logs/text-embedding-3-large-indexed.txt'
+indexed_files_log = f'./logs/{MODEL}-indexed.txt'
 if os.path.exists(indexed_files_log):
     with open(indexed_files_log, "r") as f:
         # this log file contains all the previously indexed files
@@ -68,13 +77,13 @@ if len(docs) == 0:
 if not os.path.exists(index_dir):
     index = VectorStoreIndex.from_documents([])
     # save index to disk
-    index.set_index_id("text-embedding-3-large")
+    index.set_index_id(f"{MODEL}")
     index.storage_context.persist(index_dir)
 else:
     # Rebuild storage context
     storage_context = StorageContext.from_defaults(persist_dir=index_dir)
     # Load index
-    index = load_index_from_storage(storage_context, index_id="text-embedding-3-large")    
+    index = load_index_from_storage(storage_context, index_id=f"{MODEL}")    
 
 # Insert new documents by batch
 for i in tqdm(range(0, len(docs), BATCH_SIZE)):
