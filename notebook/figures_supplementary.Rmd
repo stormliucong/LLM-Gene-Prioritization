@@ -27,14 +27,57 @@ df1$gpt_version <-  factor(df1$gpt_version, levels = c('llama-2-7b-chat', 'llama
 df2 <- read.csv('C:/Users/cptas/Downloads/Experiment_replicate_0222_prev_eval_table.csv')
 df2$institution <- sub('\\..*', '', df2$sample_id)
 df2$gpt_version <-  factor(df2$gpt_version, levels = c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat', 'gpt-3.5-turbo', 'gpt-4'))
-df3 <- read.csv('C:/Users/cptas/Documents/n_count_df.csv')
+df_count <- read.csv('D:/연구/scholar_count.csv')
 df1_d <- df1 %>% filter(prompt == 'd')
 
 df <- rbind(df1, df2)
 df_d <- rbind(df1_d, df2)
-dim(df2)
-dim(df1)
+
+df_rag <- read.csv('D:/연구/rag_eval_table.csv')
+df_few <- read.csv('D:/연구/fewshot_eval_table.csv')
+df_new <- read.csv('D:/연구/newgpt_eval_table_update.csv')
 ```
+
+# Function
+```{r}
+oavg_sd <- function(df) {
+  df %>%
+    summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              )
+}
+
+avg_sd <- function(df) {
+  df %>%
+    filter(completeness == 1) %>%
+    summarise(n = n(),
+              acc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              acc_sd = round(sd(accuracy, na.rm = TRUE),2)
+              )
+}
+
+or_function <- function(df) {
+  model_df <- df
+  K <- dim(model_df)[1]
+  M <- dim(model_df %>% filter(accuracy == 1))[1]
+  
+  model_df %>%
+    group_by(gpt_version, true_gene) %>%
+    summarise(k_i = n(),
+              o_i = sum(accuracy == 1, na.rm = TRUE),
+              M = M,
+              K = K,
+              e_i = M * (k_i/K),
+              odds_ratio = round((o_i/e_i),2)) %>%
+    arrange(desc(odds_ratio))
+}
+```
+
 
 # Figure 2 & oacc/acc by llm models
 ```{r}
@@ -42,9 +85,10 @@ df_d_oacc <- df_d %>%
   group_by(gpt_version, top_n) %>%
   summarise(n = n(),
             o_acc = sum(accuracy == 1, na.rm = T),
-            o_acc_ratio = round((o_acc/n)*100, 1)) %>%
+            o_acc_ratio = round((o_acc/n)*100, 1),
+            o_acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
   ungroup() %>%
-  select(gpt_version, top_n, o_acc_ratio)
+  select(gpt_version, top_n, o_acc_ratio, o_acc_sd)
 df_d_oacc
 
 df_d_acc <-df_d %>%
@@ -52,9 +96,10 @@ df_d_acc <-df_d %>%
   group_by(gpt_version, top_n) %>%
   summarise(n = n(),
             acc = sum(accuracy == 1, na.rm = T),
-            acc_ratio = round((acc/n)*100, 1)) %>%
+            acc_ratio = round((acc/n)*100, 1),
+            acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
   ungroup() %>%
-  select(gpt_version, top_n, acc_ratio)
+  select(gpt_version, top_n, acc_ratio, acc_sd)
 df_d_acc
 
 
@@ -75,14 +120,28 @@ df_d_long
 
 ggplot(df_d_long, aes(x = gpt_version, y = value, fill = category)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.75)) +
+  geom_errorbar(aes(ymin = value - o_acc_sd, ymax = value + o_acc_sd, color = category), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75),
+                show.legend = FALSE) +
   scale_fill_manual(values = c(
     "10 OACC" = "#56B4E9",  
     "10 ACC" = "#E69F00",   
     "50 OACC" = "#009E73",  
     "50 ACC" = "#F0E442"    
   )) +
+  scale_color_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
   labs(x = "Model & Version", y = "Accuracy Rate (%)", fill = "Category") +
-  theme(legend.position = "none")
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0, 1),
+    legend.justification = c(0, 1))
 ```
 # Figure 3
 ```{r}
@@ -90,22 +149,25 @@ g4_oa <- df1 %>%
   filter(input_type == 'hpo_concepts' & gpt_version == 'gpt-4' & institution != 'TAF1') %>%
   group_by(institution, top_n) %>%
   summarise(n = n(),
-            oacc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1)) %>%
-  select(institution, top_n, oacc)
+            oacc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1),
+            oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
+  select(institution, top_n, oacc, oacc_sd)
 
 
 g4_a <- df1 %>% 
   filter(input_type == 'hpo_concepts' & gpt_version == 'gpt-4' & completeness == 1 & institution != 'TAF1') %>%
   group_by(institution, top_n) %>%
   summarise(n = n(),
-            acc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1))%>%
-  select(institution, top_n, acc)
+            acc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1),
+            acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2))%>%
+  select(institution, top_n, acc, acc_sd)
 
 
 g4 <- left_join(g4_oa, g4_a, by = c("institution", "top_n"))
 g4$top_n <- as.character(g4$top_n)
 g4_long <- g4 %>%
   pivot_longer(cols = c(oacc, acc), names_to = "type", values_to = "value") %>%
+  pivot_longer(cols = c(oacc_sd, acc_sd), names_to = "sd_type", values_to = "sd_value") %>%
   drop_na(value) %>%
   mutate(
     type = ifelse(type == "oacc", "OACC", "ACC"),
@@ -117,14 +179,28 @@ g4_long$category <- factor(g4_long$category, levels = c("10 OACC", "10 ACC", "50
 
 ggplot(g4_long, aes(x = institution, y = value, fill = category)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.75)) +
+  geom_errorbar(aes(ymin = value - sd_value, ymax = value + sd_value, color = category), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75),
+                show.legend = FALSE) +
   scale_fill_manual(values = c(
     "10 OACC" = "#56B4E9",  
     "10 ACC" = "#E69F00",   
     "50 OACC" = "#009E73",  
     "50 ACC" = "#F0E442"    
   )) +
+  scale_color_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
   labs(x = "Institution", y = "Accuracy Rate (%)", fill = "Category") +
-  theme(legend.position = "none")
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = c(0, 1),
+    legend.justification = c(0, 1))
 ```
 
 # Figure 4
@@ -171,23 +247,28 @@ df_group_acc_dgd50 <- df_group_acc %>% filter(institution == 'DGD' & top_n == 50
 df_group_acc_taf10 <- df_group_acc %>% filter(institution == 'TAF1' & top_n == 10)
 df_group_acc_taf50 <- df_group_acc %>% filter(institution == 'TAF1' & top_n == 50)
 
+df_group_acc_dgd50 <- df_group_acc_dgd50 %>%
+  mutate(vjust = ifelse(gpt_version == 'llama-2-7b-chat', 2, 
+                        ifelse(gpt_version == 'llama-2-13b-chat', -1.5, -1.8)),
+         hjust = ifelse(gpt_version == 'llama-2-7b-chat', 0.4, 
+                        ifelse(gpt_version == 'llama-2-13b-chat', 0.6, 0.4)))
+
 cb_friendly_colors <- c("#E69F00", "#56B4E9")
 c2 <- ggplot(df_group_acc_dgd50, aes(x = gpt_version, y = acc_ratio, color = as.factor(llm))) +
   geom_point(size = 3) +
-  scale_color_manual(values = cb_friendly_colors) +
-  geom_text_repel(aes(label = paste(gpt_version, ',', round(acc_ratio, 1), '%')),
-                  size = 2.2,  # Adjust text size
-                  box.padding = unit(0.35, "lines"),
-                  point.padding = unit(0.5, "lines")) + 
+  scale_color_manual(values = cb_friendly_colors,labels = c("Traditional Tools", "LLM")) +
   theme_minimal() +
-  theme(legend.position = "none",
+  theme(legend.position = c(0, 1),
+    legend.justification = c(0, 1),
          axis.text.x = element_blank(),
         axis.text.y = element_text(size = 12),
-        axis.title.x = element_blank()) +  
-  lab(y = 'Accuracy Rate (%)')
-  ylim(0, 90) +
-  geom_rect(xmin = 0.5, xmax = 5.7, ymin = 0, ymax = 30, alpha = 0.2, color = 'darkblue', linetype = "dashed", fill = NA, linewidth = 0.8) +
-  geom_rect(xmin = 5.5, xmax = 9.5, ymin = 22, ymax = 89, alpha = 0.2, color = 'brown', linetype = "dashed", fill = NA, linewidth = 0.8)
+        axis.title.x = element_blank()) + 
+  labs(y = "Accuracy Rate (%)", color = "Model Type") +
+  ylim(0, 100) +
+  geom_rect(xmin = 0.5, xmax = 5.7, ymin = 0, ymax = 35, alpha = 0.2, color = 'darkblue', linetype = "dashed", fill = NA, linewidth = 0.8) +
+  geom_rect(xmin = 5.5, xmax = 9.5, ymin = 22, ymax = 95, alpha = 0.2, color = 'brown', linetype = "dashed", fill = NA, linewidth = 0.8) +
+  geom_text(aes(label = paste(gpt_version, round(acc_ratio, 1), '%'), vjust = vjust, hjust = hjust),
+            size = 2.3)
 c2
 ```
 
@@ -210,11 +291,417 @@ ggplot(gene_data_long, aes(x = gene, y = count, fill = count_type)) +
   theme(axis.text.x = element_text(size = 8, angle = 45, hjust = 1)) + # Adjust the size as needed
   geom_text(aes(label = ifelse(count_type == "true_gene_count" & count == 0, "*", "")), 
             position = position_dodge(width = 0.8), vjust = -0.5, size = 4)+
-  theme(legend.position = "none") +
+  theme(legend.title = element_blank(),
+        legend.position = c(1, 1),
+    legend.justification = c(1, 1)) +
   labs(y = 'Counts', x = 'Gene')
 ```
 
+# Figure S4 (Accuracy & scholar count correlation)
+```{r}
+df_gene <- df %>%
+  group_by(true_gene) %>%
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
 
+gene_count <- c()
+for (i in 1:165) {
+  x <- df_gene$true_gene[i]
+  if (x %in% df_count$Gene) {
+    j <- which(df_count$Gene == x)
+    gene_count[i] <- df_count$Count[j]
+  }
+  else {
+    gene_count[i] <- 0
+  }
+}
+
+df_gene$count <- gene_count
+df_gene$log_count <- log10(df_gene$count)
+accuracy_count <- df %>%
+  group_by(true_gene)%>%
+  summarise(accuracy_count = sum(accuracy == 1, na.rm = TRUE))
+df_gene$accuracy_count <- accuracy_count$accuracy_count
+
+
+
+cor(df_gene$oacc_avg, df_gene$log_count)
+
+ggplot(df_gene, aes(x = oacc_avg, y = log_count)) +
+  geom_jitter() +
+  labs(x = "Overall Accuracy Average (%)", y = "Scholar Count (Log Scaled)") +
+  theme_minimal()
+
+df_gene$accuracy_group <- cut(df_gene$oacc_avg, breaks = c(0, 20, 40, 60, 80, 100), include.lowest = TRUE)
+
+cb_friendly_colors <- c("#56B4E9", "#E69F00", "#009E73", "#F0E442", "#CC79A7")
+ggplot(df_gene, aes(x = accuracy_group, y = log_count, color = accuracy_group)) +
+  geom_boxplot() +
+  labs(x = "Overall Accuracy Average (%) Group",
+       y = "Scholar Count (Log Scaled)") +
+  theme_minimal() +
+  scale_color_manual(values = cb_friendly_colors, labels = c("Average 0-20 (%)", "Average 20-40 (%)", "Average 40-60 (%)", "Average 60-80 (%)", "Average 80-100 (%)")) +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+```
+# Figure S5-S7 (comparison between zero-shot and few-shot learning for three outcomes (different colors) for both gpt-3.5, and gpt-4)
+```{r}
+zero_shot <- df %>% filter(top_n == 10 & prompt == 'd' & input_type == 'hpo_concepts' & (gpt_version == 'gpt-4' | gpt_version == 'gpt-3.5-turbo'))
+zero_shot <- zero_shot[ , c(-12)]
+df_shot <- rbind(zero_shot, df_few)
+
+shot_gpt <- df_shot %>%
+  group_by(prompt, gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+shot_gpt
+
+cb_friendly_colors <- c(
+  "d" = "#56B4E9",  
+  "e" = "#E69F00"  
+)
+
+cb_friendly_labels <- c(
+  "d" = "Zero Shot Prompt",
+  "e" = "Few Shot Prompt"
+)
+
+ggplot(shot_gpt, aes(x = prompt, y = oacc_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd, color = prompt), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Zero Shot & Few Shot Prompt", y = "Overall Accuracy Rate (%)", fill = "Zero Shot & Few Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+
+ggplot(shot_gpt, aes(x = prompt, y = comp_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = comp_avg - comp_sd, ymax = comp_avg + comp_sd, color = prompt), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Zero Shot & Few Shot Prompt", y = "Task Completeness Rate (%)", fill = "Zero Shot & Few Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+
+ggplot(shot_gpt, aes(x = prompt, y = str_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = str_avg - str_sd, ymax = str_avg + str_sd, color = prompt), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Zero Shot & Few Shot Prompt", y = "Structure Compliance Rate (%)", fill = "Zero Shot & Few Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+```
+
+# Figure S8 (comparison between zero-shot and RAG learning for accuracy)
+```{r}
+rag_compare <- df %>% filter(top_n == 10 & prompt == 'd' & input_type == 'hpo_concepts' & gpt_version == 'gpt-4')
+compare_eval <- oavg_sd(rag_compare)
+df_rag <- df_rag %>% 
+  mutate(
+    group = case_when(
+      grepl("phenotypes", gpt_version) ~ "G2P",
+      grepl("genes", gpt_version) ~ "P2G",
+      TRUE ~ as.character(gpt_version)
+    ),
+    size = case_when(
+      grepl("large", gpt_version) ~ "Large",
+      grepl("small", gpt_version) ~ "Small",
+      TRUE ~ as.character(gpt_version)
+    )
+    )
+rag_eval <- df_rag %>%
+  group_by(group, size) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+rag_eval
+
+compare_eval$gpt_version <- c("gpt-4")
+compare_eval <- compare_eval[,c(8,1,2,3,4,5,6,7)]
+compare_eval$group <- c("Original")
+compare_eval$size <- c("Original")
+rag_eval <- rbind(rag_eval, compare_eval)
+rag_eval$group <- factor(rag_eval$group, levels = c("Original", "P2G", "G2P"))
+rag_eval$size <- factor(rag_eval$size, levels = c("Original", "Large", "Small"))
+cb_friendly_colors <- c(
+  "Large" = "#56B4E9",  
+  "Small" = "#E69F00",   
+  "Original" = "#CC79A7"  
+)
+
+cb_friendly_labels <- c(
+  "Large" = "text-embedding-3-large",
+  "Small" = "text-embedding-3-small",
+  "Original" = "GPT-4"
+)
+
+
+ggplot(rag_eval, aes(x = group, y = oacc_avg, fill = size)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd, color = size), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Model & Category", y = "Overall Accuracy Rate (%)", fill = "Model & Category") +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+    text = element_text(size = 8))
+```
+
+
+
+# Figure S9 (Provide a figure comparing analysis new, old, old(re-executed))
+```{r}
+old_exp <- df %>% filter(top_n == 10 & prompt == 'd' & input_type == 'free_text' & (gpt_version == 'gpt-4' | gpt_version == 'gpt-3.5-turbo'))
+df_new_update <- df_new %>%
+  mutate(indication = as.factor(ifelse(sample_id %in% old_exp$sample_id, 0, 1)))
+
+old_assess <- oavg_sd(old_exp)
+new_old <- df_new_update %>%
+  group_by(indication) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+  
+old_assess
+new_old
+
+old_assess_gpt <- old_exp %>%
+  group_by(gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+old_assess_gpt
+
+new_old_gpt <- df_new_update %>%
+  group_by(indication, gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+new_old_gpt
+
+old_assess$indication <- as.factor(2)
+old_assess_gpt$indication <- as.factor(c(2,2))
+old_assess <- old_assess[,c(8,1,2,3,4,5,6,7)]
+old_assess_gpt <- old_assess_gpt[,c(9,1,2,3,4,5,6,7,8)]
+old_new_assess <- rbind(old_assess, new_old)
+old_new_gpt <- rbind(old_assess_gpt, new_old_gpt)
+old_new_assess$indication <- ifelse(old_new_assess$indication == '2', "Pre2021 dataset (Aug 2023)",
+                                    ifelse(old_new_assess$indication == '0', "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Aug 2023)"))
+old_new_gpt$indication <- ifelse(old_new_gpt$indication == '2', "Pre2021 dataset (Aug 2023)",
+                                    ifelse(old_new_gpt$indication == '0', "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Aug 2023)"))
+
+old_new_gpt$indication <- factor(old_new_gpt$indication, levels = c("Pre2021 dataset (Aug 2023)", "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Aug 2023)"))
+cb_friendly_colors <- c(
+  "gpt-3.5-turbo" = "#56B4E9",  
+  "gpt-4" = "#E69F00"
+)
+
+cb_friendly_labels <- c(
+  "gpt-3.5-turbo" = "GPT-3.5",  
+  "gpt-4" = "GPT-4"
+)
+
+ggplot(old_new_gpt, aes(x = gpt_version, y = oacc_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd, color = gpt_version), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "GPT Version", y = "Overall Accuracy Rate (%)", fill = "GPT Version") +
+  facet_wrap(~ indication) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+
+ggplot(old_new_gpt, aes(x = gpt_version, y = comp_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = comp_avg - comp_sd, ymax = comp_avg + comp_sd, color = gpt_version), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "GPT Version", y = "Task Completness Rate (%)", fill = "GPT Version") +
+  facet_wrap(~ indication) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+
+ggplot(old_new_gpt, aes(x = gpt_version, y = str_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = str_avg - str_sd, ymax = str_avg + str_sd, color = gpt_version), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "GPT Version", y = "Structure Compliance Rate (%)", fill = "GPT Version") +
+  facet_wrap(~ indication) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+    text = element_text(size = 8))
+
+```
+
+
+# Figure S10 (Overlapping/Non-overlapping Genes accuracy rate) 
+```{r}
+old_exp$indication <- as.factor(rep(2, dim(old_exp)[1]))
+old_acc <- old_exp[,c(-12)]
+old_new_acc <- rbind(old_acc, df_new_update)
+old_new_acc$indication <- ifelse(old_new_acc$indication == '2', "Pre2021 dataset (Aug 2023)",
+                                    ifelse(old_new_acc$indication == '0', "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Aug 2023)"))
+old_new_acc$indication <- factor(old_new_acc$indication, levels = c("Pre2021 dataset (Aug 2023)", "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Aug 2023)"))
+
+old_genes <- unique(old_exp$true_gene)
+new_genes <- unique(df_new$true_gene)
+overlapping_genes <- intersect(old_genes, new_genes)
+old_new_acc$overlap <- as.factor(ifelse(old_new_acc$true_gene %in% overlapping_genes, 0, 1))
+
+old_new_gene <- old_new_acc %>%
+  group_by(true_gene, indication, gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg)) %>%
+  filter(oacc_avg > 0)
+old_new_gene$overlap <- as.factor(ifelse(old_new_gene$true_gene %in% overlapping_genes, 0, 1))
+
+
+cb_friendly_colors <- c(
+  "gpt-3.5-turbo" = "#56B4E9",  
+  "gpt-4" = "#E69F00"
+)
+
+cb_friendly_labels <- c(
+  "gpt-3.5-turbo" = "GPT-3.5",  
+  "gpt-4" = "GPT-4"
+)
+
+ggplot(old_new_gene, aes(x = true_gene, y = oacc_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd, color = gpt_version), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Genes", y = "Overall Accuracy Rate (%)", fill = "Original & New Experiment") +
+  facet_grid(overlap ~ indication, scales = "free_y", labeller = labeller(overlap = c("0" = "Overlapping Genes", "1" = "Non-Overlapping Genes"))) +
+  theme_minimal() +
+ theme(
+    legend.title = element_blank(),
+    legend.position = "right",
+    axis.text.x = element_text(angle = 270, vjust = 0.5, hjust=1),  # Rotate gene names for better readability
+    axis.text.y = element_text(size = 8),
+    panel.grid.major = element_line(color = "grey80"),  # Add grid lines
+    text = element_text(size = 10)
+  ) +
+  coord_flip()
+
+```
+```{r}
+ggplot(old_new_gene, aes(x = true_gene, y = oacc_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd, color = gpt_version), 
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Genes", y = "Overall Accuracy Rate (%)", fill = "GPT Version") +
+  facet_grid(overlap ~ indication, scales = "free_y", labeller = labeller(overlap = c("0" = "Overlapping Genes", "1" = "Non-Overlapping Genes"))) +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "right",
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  # Rotate gene names for better readability
+    axis.text.y = element_text(size = 8),
+    panel.grid.major.x = element_line(color = "grey80"),  # Add vertical grid lines
+    text = element_text(size = 10)
+  ) +
+  coord_flip()  
+```
 
 # Overall Accuacy top10
 ```{r}
@@ -660,6 +1147,74 @@ or_function(df1, 'gpt-3.5-turbo')
 or_function(df2, 'llama-2-7b-chat')
 or_function(df2, 'llama-2-13b-chat')
 or_function(df2, 'llama-2-70b-chat')
+```
+
+```{r}
+g4 <- or_function(df1, 'gpt-4')
+g3 <- or_function(df1, 'gpt-3.5-turbo')
+l7 <- or_function(df2, 'llama-2-7b-chat')
+l13 <- or_function(df2, 'llama-2-13b-chat')
+l70 <- or_function(df2, 'llama-2-70b-chat')
+or_llm <- rbind(g3,g4,l7,l13,l70)
+#write.csv(or_llm,,file="supplementary1.csv")
+```
+
+```{r}
+g4$scholar_count <- c(240000, 19200,184000,4930,36300,6650,98000,4130,244000,12600,15800,16500,4100,11400,15700,8470,88200,3150,19700,36700,232000,21200,7170,10800,47000,8170,18100,7370,3440,4040,16100,392000,931000,26800,8460,11200,4390,1490,1740,20900,8280,15000,56900,2680,5640,17400,108000,9550,1360,4140,2800,2190,4570,25600,15500,6000,1430,6250,38000,2540,16800,12300,41500,5680,6660,606,18000,21000,8040,6560,17000,759,5260,3690,1020,664,664000,12700,491,112000,679,3050,24900,6960,3600,425,2860,32300,4480,15600,4370,1260,2640,2750,4360,21700,14900,28700,602,26100,2250,1070,5330,1330000,3000,17000,5530,2650,10300,17600,21700,27600,7380,39400,209000,17100,1200,3460,2470,2730,14300,300000,1550,645,4720,15600,2650,7860,7550,5500,10500,1710,20600,14800,4640,9600,1330,6170,4300,1940,1010,3930,63200, 17800, 6520, 2780, 7340, 16200, 16200, 17800, 15600, 10400, 468, 1150, 13800, 2210, 355, 14300, 1220, 3100, 1010, 2200, 9580, 3600, 1580)
+g4_update <- g4 %>% 
+  select(true_gene, odds_ratio, scholar_count) %>%
+  mutate(indicator = ifelse(odds_ratio >= 1, 1, 0),
+         log_count = log(scholar_count, 10),
+         index = ifelse(odds_ratio == 0, 1,
+                        ifelse(odds_ratio < 1, 2,
+                               ifelse(odds_ratio < 2, 3, 4))))
+
+g4_update$indicator <- as.factor(g4_update$indicator)
+g4_update$index <- as.factor(g4_update$index)
+
+table(g4_update$indicator)
+summary(g4_update)
+g4_update %>%
+  group_by(indicator) %>%
+  summarise(n = n(),
+            minimum = min(scholar_count),
+            maximum = max(scholar_count),
+            avg = mean(scholar_count),
+            med = median(scholar_count))
+
+cb_friendly_colors <- c("#E69F00", "#56B4E9")
+cb_friendly_colors2 <- c("#56B4E9", "#E69F00", "#009E73", "#F0E442")
+
+ggplot(g4_update, aes(x=indicator, y = log_count, color = indicator)) +
+  geom_boxplot() + 
+  theme_minimal() + 
+  scale_color_manual(values = cb_friendly_colors,labels = c("Odds Ratio < 1", "Odds Ratio > 1")) +
+  labs(x = "Odds Ratio", y = "Log Scholar Count") +
+  ylim(0, 7.5)
+
+ggplot(g4_update, aes(x=index, y = log_count, color = index)) +
+  geom_boxplot() + 
+  theme_minimal() + 
+  scale_color_manual(values = cb_friendly_colors2, labels = c("Odds Ratio = 0", "Odds Ratio between 0 & 1", "Odds Ratio between 1 & 2", "Odds Ratio > 2")) +
+  labs(x = "Odds Ratio", y = "Log Scholar Count") +
+  ylim(0, 7.5)
+
+ggplot(g4_update, aes(x=odds_ratio, y=log_count, color = indicator)) +
+  geom_jitter() + 
+  theme_minimal() + 
+  scale_color_manual(values = cb_friendly_colors,labels = c("Odds Ratio < 1", "Odds Ratio > 1")) +
+  labs(x = "Odds Ratio", y = "Log Scholar Count") +
+  ylim(0, 7)
+
+
+ggplot(g4_update, aes(x=index, y=log_count, color = index)) +
+  geom_jitter() + 
+  theme_minimal() +
+  scale_color_manual(values = cb_friendly_colors2, labels = c("Odds Ratio = 0", "Odds Ratio between 0 & 1", "Odds Ratio between 1 & 2", "Odds Ratio > 2")) +
+  theme(axis.text.x = element_blank()) + 
+  labs(x = "Odds Ratio", y = "Count of Publications (Log Scale)") +
+  ylim(2, 7)
+
 ```
 
 
