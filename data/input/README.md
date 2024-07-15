@@ -12,5 +12,5 @@
 - DGD dataset (85 cases): Phen2Gene reference number 36
 - CSH dataset (72 cases): Phen2Gene reference number 37 - 97
 - AJHG dataset (83 cases): Phen2Gene reference number 98 - 111
-- Other (4 cases): The PMID is in the 'free_text_pmid_input.csv'
+- Other (4 cases): The PMID is in the `free_text_pmid_input.csv`
 - Post-2023 dataset can be traced by PMIDs in the `new_free_text_pmid_input.csv`
