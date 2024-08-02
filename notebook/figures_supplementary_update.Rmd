@@ -1,0 +1,1827 @@
+---
+title: "figures_supplementary_update"
+author: "JK4529"
+date: "2024-06-21"
+output: html_document
+---
+
+---
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(Hmisc)
+library(prettyR)
+library(rcompanion)
+library(dplyr)
+library(ggplot2)
+library(TukeyC)
+library(tidyr)
+library(plotly)
+library(forcats)
+library(gridExtra)
+library(scales)
+library(ggsignif)
+library(rsample)
+library(purrr)
+library(boot)
+set.seed(729)
+```
+
+# datasets
+```{r}
+df1 <- read.csv('C:/Users/cptas/Downloads/gpt_eval_table.csv')
+df1$institution <- sub('\\..*', '', df1$sample_id)
+df1$gpt_version <-  factor(df1$gpt_version, levels = c('gpt-3.5-turbo', 'gpt-4'))
+df2 <- read.csv('C:/Users/cptas/Downloads/llama2_eval_table.csv')
+df2$institution <- sub('\\..*', '', df2$sample_id)
+df2$gpt_version <-  factor(df2$gpt_version, levels = c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat'))
+df_count <- read.csv('D:/연구/scholar_count.csv')
+df1_d <- df1 %>% filter(prompt == 'd')
+
+df <- rbind(df1, df2)
+df$gpt_version <- factor(df$gpt_version, levels = c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat', 'gpt-3.5-turbo', 'gpt-4'))
+df_d <- rbind(df1_d, df2)
+df_d$gpt_version <- factor(df_d$gpt_version, levels = c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat', 'gpt-3.5-turbo', 'gpt-4'))
+
+df_rag <- read.csv('D:/연구/rag_eval_table.csv')
+df_few <- read.csv('D:/연구/fewshot_eval_table.csv')
+df_new <- read.csv('D:/연구/newgpt_update.csv')
+```
+
+# Function
+```{r}
+oavg_sd <- function(df) {
+  df %>%
+    summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              )
+}
+
+avg_sd <- function(df) {
+  df %>%
+    filter(completeness == 1) %>%
+    summarise(n = n(),
+              acc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              acc_sd = round(sd(accuracy, na.rm = TRUE),2)
+              )
+}
+
+or_function <- function(df) {
+  model_df <- df
+  K <- dim(model_df)[1]
+  M <- dim(model_df %>% filter(accuracy == 1))[1]
+  
+  model_df %>%
+    group_by(gpt_version, true_gene) %>%
+    summarise(k_i = n(),
+              o_i = sum(accuracy == 1, na.rm = TRUE),
+              M = M,
+              K = K,
+              e_i = M * (k_i/K),
+              odds_ratio = round((o_i/e_i),2)) %>%
+    arrange(desc(odds_ratio))
+}
+```
+
+# Figure 1
+```{r}
+df_d_oacc <- df_d %>%
+  group_by(gpt_version, top_n) %>%
+  summarise(n = n(),
+            o_acc = sum(accuracy == 1, na.rm = T),
+            o_acc_ratio = round((o_acc/n)*100, 1),
+            o_acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
+  ungroup() %>%
+  select(gpt_version, top_n, o_acc_ratio, o_acc_sd)
+
+df_d_acc <-df_d %>%
+  filter(completeness == 1) %>%
+  group_by(gpt_version, top_n) %>%
+  summarise(n = n(),
+            acc = sum(accuracy == 1, na.rm = T),
+            acc_ratio = round((acc/n)*100, 1),
+            acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
+  ungroup() %>%
+  select(gpt_version, top_n, acc_ratio, acc_sd)
+
+df_d_combine_acc <- left_join(df_d_oacc, df_d_acc, by = c("gpt_version", "top_n"))
+df_d_combine_acc$top_n <- as.character(df_d_combine_acc$top_n)
+
+df_d_long <- df_d_combine_acc %>%
+  pivot_longer(cols = c(o_acc_ratio, acc_ratio), names_to = "type", values_to = "value") %>%
+  drop_na(value) %>%
+  mutate(
+    type = ifelse(type == "o_acc_ratio", "OACC", "ACC"),
+    category = paste(top_n, type, sep = " ")
+  )
+df_d_long$category <- factor(df_d_long$category, levels = c("10 OACC", "10 ACC", "50 OACC", "50 ACC"))
+g4_oa <- df1 %>% 
+  filter(input_type == 'hpo_concepts' & gpt_version == 'gpt-4' & institution != 'TAF1') %>%
+  group_by(institution, top_n) %>%
+  summarise(n = n(),
+            oacc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1),
+            oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2)) %>%
+  select(institution, top_n, oacc, oacc_sd)
+
+
+g4_a <- df1 %>% 
+  filter(input_type == 'hpo_concepts' & gpt_version == 'gpt-4' & completeness == 1 & institution != 'TAF1') %>%
+  group_by(institution, top_n) %>%
+  summarise(n = n(),
+            acc = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 1),
+            acc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2))%>%
+  select(institution, top_n, acc, acc_sd)
+
+
+g4 <- left_join(g4_oa, g4_a, by = c("institution", "top_n"))
+g4$top_n <- as.character(g4$top_n)
+g4_long <- g4 %>%
+  pivot_longer(cols = c(oacc, acc), names_to = "type", values_to = "value") %>%
+  pivot_longer(cols = c(oacc_sd, acc_sd), names_to = "sd_type", values_to = "sd_value") %>%
+  drop_na(value) %>%
+  mutate(
+    type = ifelse(type == "oacc", "OACC", "ACC"),
+    category = paste(top_n, type, sep = " ")
+  )
+g4_long$category <- factor(g4_long$category, levels = c("10 OACC", "10 ACC", "50 OACC", "50 ACC"))
+
+df1_d2 <- df1_d
+df1_d2$institution <- ifelse(df1_d2$institution == 'AJHG' | df1_d2$institution == 'CSH', 'AJHG/CSH', df1_d2$institution)
+df1_group_acc <- df1_d2  %>% filter(input_type == 'hpo_concepts')%>%
+  select(institution, top_n, gpt_version, accuracy) %>%
+  group_by(institution, top_n, gpt_version) %>%
+  summarise(n = n(),
+            acc = sum(accuracy == 1, na.rm = TRUE),
+            acc_ratio = round((acc/n)*100,1)) %>%
+  select('institution', 'top_n', 'gpt_version', 'acc_ratio')
+  
+
+df2_2 <- df2
+df2_2$institution <- ifelse(df2_2$institution == 'AJHG' | df2_2$institution == 'CSH', 'AJHG/CSH', df2_2$institution)
+df2_group_acc <- df2_2  %>% filter(input_type == 'hpo_concepts')%>%
+  select(institution, top_n, gpt_version, accuracy) %>%
+  group_by(institution, top_n, gpt_version) %>%
+  summarise(n = n(),
+            acc = sum(accuracy == 1, na.rm = TRUE),
+            acc_ratio = round((acc/n)*100,1)) %>%
+  select('institution', 'top_n', 'gpt_version', 'acc_ratio')
+
+df_group_acc <- rbind(df1_group_acc, df2_group_acc)
+
+new_rows <- data.frame(
+  'institution' = c('AJHG/CSH','AJHG/CSH','AJHG/CSH','AJHG/CSH','AJHG/CSH','AJHG/CSH','AJHG/CSH','AJHG/CSH','ColumbiaU','ColumbiaU','ColumbiaU','ColumbiaU','ColumbiaU','ColumbiaU','ColumbiaU','ColumbiaU','DGD','DGD','DGD','DGD','DGD','DGD','DGD','DGD','TAF1','TAF1','TAF1','TAF1','TAF1','TAF1','TAF1','TAF1'), 
+  'top_n' = c(10,10,10,10,50,50,50,50,10,10,10,10,50,50,50,50,10,10,10,10,50,50,50,50,10,10,10,10,50,50,50,50), 
+  'gpt_version' = c('Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO','Phen2Gene','Phenolyzer','AMELIE','GADO'),
+  'acc_ratio' = c(32.1,19.2,22.4,15.4,47.4,28.2,33.3,35.3,51.9,29.6,51.9,40.7,66.7,40.7,74.1,70.4,35.3,18.8,62.4,16.5,55.3,28.2,84.7,55.3,100,0,100,100,100,0,100,100))
+
+df_group_acc <- rbind(df_group_acc, new_rows)
+df_group_acc$gpt_version <-  factor(df_group_acc$gpt_version, levels = c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat', 'gpt-3.5-turbo', 'gpt-4', 'Phen2Gene', 'Phenolyzer', 'AMELIE', 'GADO'))
+df_group_acc$llm <- ifelse(df_group_acc$gpt_version %in% c('llama-2-7b-chat', 'llama-2-13b-chat', 'llama-2-70b-chat', 'gpt-3.5-turbo', 'gpt-4'),1,0)
+
+df_group_acc_ac10 <- df_group_acc %>% filter(institution == 'AJHG/CSH' & top_n == 10)
+df_group_acc_ac50 <- df_group_acc %>% filter(institution == 'AJHG/CSH' & top_n == 50)
+df_group_acc_cu10 <- df_group_acc %>% filter(institution == 'ColumbiaU' & top_n == 10)
+df_group_acc_cu50 <- df_group_acc %>% filter(institution == 'ColumbiaU' & top_n == 50)
+df_group_acc_dgd10 <- df_group_acc %>% filter(institution == 'DGD' & top_n == 10)
+df_group_acc_dgd50 <- df_group_acc %>% filter(institution == 'DGD' & top_n == 50)
+df_group_acc_taf10 <- df_group_acc %>% filter(institution == 'TAF1' & top_n == 10)
+df_group_acc_taf50 <- df_group_acc %>% filter(institution == 'TAF1' & top_n == 50)
+
+df_group_acc_dgd50 <- df_group_acc_dgd50 %>%
+  mutate(vjust = ifelse(gpt_version == 'llama-2-7b-chat', 2.7, 
+                        ifelse(gpt_version == 'llama-2-13b-chat', -1.5, 
+                               ifelse(gpt_version == 'GADO', -2.5, 
+                                      ifelse(gpt_version == 'Phen2Gene', 2.7, -1.7)))),
+         hjust = ifelse(gpt_version == 'llama-2-7b-chat', 0.3, 
+                        ifelse(gpt_version == 'llama-2-13b-chat', 0.6,
+                               ifelse(gpt_version == 'Phen2Gene', 0.3, 
+                                      ifelse(gpt_version == 'GADO', 0.6, 0.5)))))
+df_group_acc_dgd50$gpt_version <- recode(df_group_acc_dgd50$gpt_version,
+  'gpt-3.5-turbo' = 'GPT-3.5',
+  'llama-2-7b-chat' = 'Llama2-7B',
+  'llama-2-13b-chat' = 'Llama2-13B',
+  'llama-2-70b-chat' = 'Llama2-70B',
+  'gpt-4' = 'GPT-4',
+  'Phen2Gene' = 'Phen2Gene',
+  'Phenolyzer' = 'Phenolyzer',
+  'AMELIE' = 'AMELIE',
+  'GADO' = 'GADO'
+)
+
+a1 <- ggplot(df_d_long, aes(x = gpt_version, y = value, fill = category)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75)) +
+  geom_errorbar(aes(ymin = value - o_acc_sd, ymax = value + o_acc_sd),
+                color = 'black',
+                width = 0.01,
+                size = 1,
+                position = position_dodge(width = 0.75),
+                show.legend = FALSE) +
+  ggtitle("A") + 
+  scale_fill_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
+  scale_color_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
+  scale_x_discrete(labels = c(
+    'llama-2-7b-chat' = 'Llama2-7B',
+    'llama-2-13b-chat' = 'Llama2-13B',
+    'llama-2-70b-chat' = 'Llama2-70B',
+    'gpt-3.5-turbo' = 'GPT-3.5',
+    'gpt-4' = 'GPT-4'
+  )) + 
+  labs(x = "Model & Version", y = "Accuracy Rate (%)", fill = "Category") +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(0.2, "cm"),
+    legend.text = element_text(size = 6),
+    axis.text = element_text(size = 4.5),
+    axis.title.x = element_blank(),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+a1
+
+b1 <- ggplot(g4_long, aes(x = institution, y = value, fill = category)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75)) +
+  geom_errorbar(aes(ymin = value - sd_value, ymax = value + sd_value), 
+                color = 'black',
+                width = 0.01,
+                size = 1,
+                position = position_dodge(width = 0.75),
+                show.legend = FALSE) +
+  ggtitle("B") + 
+  scale_fill_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
+  scale_color_manual(values = c(
+    "10 OACC" = "#56B4E9",  
+    "10 ACC" = "#E69F00",   
+    "50 OACC" = "#009E73",  
+    "50 ACC" = "#F0E442"    
+  )) +
+  labs(x = "Institution", y = "Accuracy Rate (%)", fill = "Category") +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "top",
+    legend.key.size = unit(0.2, "cm"),
+    legend.text = element_text(size = 6),
+    axis.text = element_text(size = 6),
+    axis.title.x = element_blank(),
+    plot.title = element_text(size = 10, face = "bold")
+  )
+
+b1
+
+cb_friendly_colors <- c("#E69F00", "#56B4E9")
+c1 <- ggplot(df_group_acc_dgd50, aes(x = gpt_version, y = acc_ratio, color = as.factor(llm))) +
+  geom_point(size = 1) +
+  ggtitle("C") + 
+  scale_color_manual(values = cb_friendly_colors, labels = c("Traditional Tools", "LLM")) +
+  theme_minimal() +
+  theme(
+    legend.position = c(0, 1),
+    legend.justification = c(0, 1),
+    legend.key.size = unit(0.5, "cm"),
+    legend.text = element_text(size = 6),
+    legend.title = element_blank(),
+    axis.text = element_text(size = 8),
+    axis.title.x = element_blank(),
+    plot.title = element_text(size = 10, face = "bold"),
+    axis.text.x = element_blank()
+  ) + 
+  labs(y = "Accuracy Rate (%)", color = "Model Type") +
+  ylim(0, 100) +
+  geom_rect(xmin = 0.5, xmax = 5.7, ymin = 0, ymax = 35, alpha = 0.2, color = 'darkblue', linetype = "dashed", fill = NA, linewidth = 0.8) +
+  geom_rect(xmin = 5.5, xmax = 9.5, ymin = 22, ymax = 95, alpha = 0.2, color = 'brown', linetype = "dashed", fill = NA, linewidth = 0.8) +
+  geom_text(aes(label = paste(gpt_version, round(acc_ratio, 1), '%'), vjust = vjust, hjust = hjust), size = 1.1, fontface = "bold")
+
+c1
+
+
+#g <- arrangeGrob(a1, b1, c1, ncol = 2)
+#ggsave('Figure1.pdf', g,  dpi=300)
+```
+
+# Figure 2
+```{r}
+count_df <- df3 %>%
+  arrange(desc(top10_count))
+
+count_df_10 <- count_df[1:10,]
+count_df_10$label <- ifelse(count_df_10$true_gene_count == 0, paste(count_df_10$gene, "*", sep = ""), count_df_10$gene)
+
+gene_data_long <- count_df_10 %>%
+  pivot_longer(cols = c(top50_count, top10_count, true_gene_count), names_to = "count_type", values_to = "count")
+gene_data_long$gene <- factor(gene_data_long$gene, levels = count_df_10$gene)
+
+a2 <- ggplot(gene_data_long, aes(x = gene, y = count, fill = count_type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  ggtitle('A') + 
+  scale_fill_manual(values = c("top50_count" = "lightblue", "top10_count" = "lightgreen", "true_gene_count" = "pink"),
+                    labels = c("top50_count" = "Top 50 Count", "top10_count" = "Top 10 Count", "true_gene_count" = "True Gene Count")) +
+  scale_y_continuous(labels = comma) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8, angle = 45, hjust = 1, face = "italic")) + 
+  geom_text(aes(label = ifelse(count_type == "true_gene_count" & count == 0, "*", "")), 
+            position = position_dodge(width = 0.8), vjust = -0.5, size = 4)+
+  theme(legend.title = element_blank(),
+        legend.position = 'right',
+        plot.title = element_text(size = 10, face = "bold")) +
+  labs(y = 'Counts', x = 'Gene')
+
+or_function <- function(df, llm_model) {
+  model_df <- df %>%
+    filter(gpt_version == llm_model)
+  K <- dim(model_df)[1]
+  M <- dim(model_df %>% filter(accuracy == 1))[1]
+  
+  model_df %>%
+    group_by(true_gene) %>%
+    summarise(k_i = n(),
+              o_i = sum(accuracy == 1, na.rm = TRUE),
+              M = M,
+              K = K,
+              e_i = M * (k_i/K),
+              odds_ratio = round((o_i/e_i),2)) %>%
+    arrange(desc(odds_ratio))
+}
+a2
+
+g4 <- or_function(df1, 'gpt-4')
+g4$scholar_count <- c(240000, 19200,184000,4930,36300,6650,98000,4130,244000,12600,15800,16500,4100,11400,15700,8470,88200,3150,19700,36700,232000,21200,7170,10800,47000,8170,18100,7370,3440,4040,16100,392000,931000,26800,8460,11200,4390,1490,1740,20900,8280,15000,56900,2680,5640,17400,108000,9550,1360,4140,2800,2190,4570,25600,15500,6000,1430,6250,38000,2540,16800,12300,41500,5680,6660,606,18000,21000,8040,6560,17000,759,5260,3690,1020,664,664000,12700,491,112000,679,3050,24900,6960,3600,425,2860,32300,4480,15600,4370,1260,2640,2750,4360,21700,14900,28700,602,26100,2250,1070,5330,1330000,3000,17000,5530,2650,10300,17600,21700,27600,7380,39400,209000,17100,1200,3460,2470,2730,14300,300000,1550,645,4720,15600,2650,7860,7550,5500,10500,1710,20600,14800,4640,9600,1330,6170,4300,1940,1010,3930,63200, 17800, 6520, 2780, 7340, 16200, 16200, 17800, 15600, 10400, 468, 1150, 13800, 2210, 355, 14300, 1220, 3100, 1010, 2200, 9580, 3600, 1580)
+
+g4_update <- g4 %>% 
+  select(true_gene, odds_ratio, scholar_count) %>%
+  mutate(indicator = ifelse(odds_ratio >= 1, 1, 0),
+         log_count = log(scholar_count, 10),
+         index = ifelse(odds_ratio == 0, 1,
+                        ifelse(odds_ratio < 1, 2,
+                               ifelse(odds_ratio < 2, 3, 4))))
+
+g4_update$indicator <- as.factor(g4_update$indicator)
+g4_update$index <- as.factor(g4_update$index)
+
+cb_friendly_colors2 <- c("#56B4E9", "#E69F00", "#009E73", "#F0E442")
+
+b2 <- ggplot(g4_update, aes(x=index, y=log_count, color = index)) +
+  geom_jitter() + 
+  ggtitle('B') +
+  theme_minimal() +
+  scale_color_manual(values = cb_friendly_colors2, labels = c("Odds Ratio = 0", "Odds Ratio between 0 & 1", "Odds Ratio between 1 & 2", "Odds Ratio > 2")) +
+  theme(legend.title = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 8),
+        plot.title = element_text(size = 10, face = "bold")) + 
+  labs(x = "Odds Ratio", y = "Count of Publications (Log Scale)") +
+  ylim(2, 6.5) 
+b2
+
+#g2 <- arrangeGrob(a2, b2, ncol = 1)
+#ggsave('Figure2.pdf', g2,  dpi=300)
+```
+
+# Figure 3
+```{r}
+zero_shot <- df %>% filter(top_n == 10 & prompt == 'd' & input_type == 'hpo_concepts' & (gpt_version == 'gpt-4' | gpt_version == 'gpt-3.5-turbo'))
+zero_shot <- zero_shot[ , c(-12)]
+df_shot <- rbind(zero_shot, df_few)
+
+shot_gpt <- df_shot %>%
+  group_by(prompt, gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+shot_gpt$gpt_version <- recode(shot_gpt$gpt_version,
+                               'gpt-3.5-turbo' = 'GPT-3.5',
+                               'gpt-4' = 'GPT-4')
+
+cb_friendly_colors <- c(
+  "d" = "#8E44AD",  
+  "e" = "#009E73"  
+)
+
+cb_friendly_labels <- c(
+  "d" = "Zero-Shot Prompt",
+  "e" = "Few-Shot Prompt"
+)
+
+a3 <- ggplot(shot_gpt, aes(x = prompt, y = oacc_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd), 
+                color = 'black',
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  ggtitle('A') + 
+  scale_fill_manual(values = cb_friendly_colors) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = NULL, y = "Overall Accuracy Rate (%)", fill = "Zero-Shot & Few-Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 8), 
+        text = element_text(size = 8),
+        plot.title = element_text(size = 10, face = "bold"))
+a3
+
+b3 <- ggplot(shot_gpt, aes(x = prompt, y = comp_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = comp_avg - comp_sd, ymax = comp_avg + comp_sd), 
+                color = 'black',
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  ggtitle('B') +
+  scale_fill_manual(values = cb_friendly_colors) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = NULL, y = "Task Completeness Rate (%)", fill = "Zero-Shot & Few-Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 8), 
+        text = element_text(size = 8),
+        plot.title = element_text(size = 10, face = "bold"))
+b3
+
+c3 <- ggplot(shot_gpt, aes(x = prompt, y = str_avg, fill = prompt)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = str_avg - str_sd, ymax = str_avg + str_sd), 
+                color = 'black',
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  ggtitle('C') +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = NULL, y = "Structure Compliance Rate (%)", fill = "Zero-Shot & Few-Shot Prompt") +
+  facet_wrap(~ gpt_version) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 8), 
+        text = element_text(size = 8),
+        plot.title = element_text(size = 10, face = "bold"))
+c3
+#g3 <- arrangeGrob(a3, b3, c3, ncol = 3, widths = unit(c(0.8, 0.8, 1), "null"))
+#ggsave('D:/연구/Figure3.pdf', g3,  dpi=300, width = 13, height = 4)
+```
+# Figure 4
+```{r}
+rag_compare <- df %>% filter(top_n == 10 & prompt == 'd' & input_type == 'hpo_concepts' & gpt_version == 'gpt-4')
+compare_eval <- oavg_sd(rag_compare)
+df_rag <- df_rag %>% 
+  mutate(
+    group = case_when(
+      grepl("phenotypes", gpt_version) ~ "G2P",
+      grepl("genes", gpt_version) ~ "P2G",
+      TRUE ~ as.character(gpt_version)
+    ),
+    size = case_when(
+      grepl("large", gpt_version) ~ "Large",
+      grepl("small", gpt_version) ~ "Small",
+      TRUE ~ as.character(gpt_version)
+    )
+    )
+rag_eval <- df_rag %>%
+  group_by(group, size) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+
+compare_eval$gpt_version <- c("gpt-4")
+compare_eval <- compare_eval[,c(8,1,2,3,4,5,6,7)]
+compare_eval$group <- c("Original")
+compare_eval$size <- c("Original")
+rag_eval <- rbind(rag_eval, compare_eval)
+rag_eval$group <- factor(rag_eval$group, levels = c("Original", "P2G", "G2P"))
+rag_eval$size <- factor(rag_eval$size, levels = c("Original", "Large", "Small"))
+cb_friendly_colors <- c(
+  "Large" = "#B8E186",  
+  "Small" = "#56B4E9",   
+  "Original" = "#8E44AD"  
+)
+
+cb_friendly_labels <- c(
+  "Large" = "Text Embedding3 Large",
+  "Small" = "Text Embedding3 Small",
+  "Original" = "GPT-4"
+)
+
+rag_eval
+g4 <- ggplot(rag_eval, aes(x = group, y = oacc_avg, fill = size)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd), 
+                color = 'black',
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(x = "Model & Category", y = "Overall Accuracy Rate (%)", fill = "Model & Category") +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+    text = element_text(size = 10))
+g4
+#ggsave('Figure4.pdf', g4,  dpi=300)
+```
+
+# Figure 5
+```{r}
+old_new_gpt_assess <- old_new_df%>%
+  group_by(indication, gpt_version) %>% 
+  summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              ) %>%
+  arrange(desc(oacc_avg))
+
+old_new_gpt_assess$indication <- recode(old_new_gpt_assess$indication,
+                               'Pre2021 dataset (Aug 2023)' = 'Pre-2021 Dataset (Aug 2023)',
+                               'Pre2021 dataset (Jun 2024)' = 'Pre-2021 Dataset (Jun 2024)',
+                               'Post2023 dataset (Jun 2024)' = 'Post-2023 Dataset (Jun 2024)')
+
+cb_friendly_colors <- c(
+  "gpt-3.5-turbo" = "#1B4F72",  
+  "gpt-4" = "#F0E442"
+)
+
+cb_friendly_labels <- c(
+  "gpt-3.5-turbo" = "GPT-3.5",  
+  "gpt-4" = "GPT-4"
+)
+old_new_gpt_assess$facet_label <- interaction(old_new_gpt_assess$indication, old_new_gpt_assess$gpt_version)
+
+g5 <- ggplot(old_new_gpt_assess, aes(x = indication, y = oacc_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.75), width = 0.7) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd), 
+                color = 'black',
+                width = 0.2,
+                size = 1,
+                position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = cb_friendly_colors, labels = cb_friendly_labels) +
+  scale_color_manual(values = cb_friendly_colors, guide = "none") +
+  labs(y = "Overall Accuracy Rate (%)", fill = "GPT Version") +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        legend.position = "right",
+        axis.title.x = element_blank(),
+         axis.text = element_text(size = 8),
+    text = element_text(size = 10)) 
+
+g5
+#ggsave('Figure5.pdf', g5,  dpi=300)
+```
+
+# Figure S4 
+```{r}
+
+gene_list_update <- unique(old_new_df %>% filter(overlap == 0 & indication == "Post2023 dataset (Jun 2024)") %>%
+  select(true_gene))
+
+str(gene_list_update$true_gene)
+
+old_new_gene <- old_new_df %>%
+  filter(true_gene %in% gene_list_update$true_gene) %>%
+  group_by(indication, true_gene, gpt_version) %>% 
+  summarise(n = n(),
+            oacc_avg = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+            oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n), 2)) %>%
+  arrange(desc(oacc_avg))
+
+old_new_gene$indication <- factor(old_new_gene$indication, levels = c("Pre2021 dataset (Aug 2023)", "Pre2021 dataset (Jun 2024)", "Post2023 dataset (Jun 2024)"))
+
+old_new_gene$indication <- recode(old_new_gene$indication,
+                               'Pre2021 dataset (Aug 2023)' = 'Pre-2021 Dataset (Aug 2023)',
+                               'Pre2021 dataset (Jun 2024)' = 'Pre-2021 Dataset (Jun 2024)',
+                               'Post2023 dataset (Jun 2024)' = 'Post-2023 Dataset (Jun 2024)')
+
+gs4 <- ggplot(old_new_gene, aes(x = true_gene, y = oacc_avg, fill = gpt_version)) +
+  geom_bar(stat = "identity", position = position_dodge2(width = 0.8, preserve = "single")) +
+  geom_errorbar(aes(ymin = oacc_avg - oacc_sd, ymax = oacc_avg + oacc_sd ), 
+               color = 'black', width = 0.2, size = 1, position = position_dodge(width = 0.9)) +
+  scale_fill_manual(values = c("skyblue", "orange"), labels = c("GPT-3.5", "GPT-4")) +
+  scale_color_manual(values = c("skyblue", "orange"), guide = "none") +
+  labs(x = "Genes", y = "Overall Accuracy Rate (%)", fill = "Original & New Experiment") +
+  facet_wrap(~ indication, scales = "free_x", ncol = 3) +
+  theme_minimal() +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "right",
+    axis.text.x = element_text(angle = 270, vjust = 0.5, hjust = 1),  # Rotate gene names for better readability
+    axis.text.y = element_text(size = 6, face = 'italic'),
+    panel.grid.major = element_line(color = "grey80"),  # Add grid lines
+    text = element_text(size = 10)
+  ) +
+  coord_flip()
+gs4
+
+#ggsave('plots4_update.pdf', gs4,  dpi=300)
+```
+
+#Result_acc1
+```{r}
+set.seed(729)
+result_oacc_ci <- function(df, a) {
+  filtered_data <- df %>% filter(top_n == a)
+  
+  avg_result_model <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(n = n(),
+              completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                acc = sum(accuracy == 1, na.rm = TRUE),
+                acc_ratio = acc / n,
+                .groups = 'drop')
+    
+    acc_ratio <- mean(d$acc_ratio, na.rm = TRUE)
+    return(acc_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+
+
+result_oacc_ci(df_d, 10)
+result_oacc_ci(df_d, 50)
+```
+
+## Result_acc2
+```{r}
+set.seed(729)
+result_acc_ci_top <- function(df) {
+  filtered_data <- df %>% filter(completeness == 1)
+  
+  avg_result_model <- filtered_data %>%
+    group_by(top_n) %>%
+    summarise(n = n(),
+              completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                acc = sum(accuracy == 1, na.rm = TRUE),
+                acc_ratio = acc / n,
+                .groups = 'drop')
+    
+    acc_ratio <- mean(d$acc_ratio, na.rm = TRUE)
+    return(acc_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(top_n) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+
+result_oacc_ci_top <- function(df) {
+  filtered_data <- df 
+  
+  avg_result_model <- filtered_data %>%
+    group_by(top_n) %>%
+    summarise(n = n(),
+              completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                acc = sum(accuracy == 1, na.rm = TRUE),
+                acc_ratio = acc / n,
+                .groups = 'drop')
+    
+    acc_ratio <- mean(d$acc_ratio, na.rm = TRUE)
+    return(acc_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(top_n) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+
+result_acc_ci_top(df1)
+result_oacc_ci_top(df1)
+```
+
+# Result_acc3
+```{r}
+set.seed(729)
+result_comp_ci_model <- function(df) {
+  filtered_data <- df
+  
+  avg_result_model <- filtered_data %>%
+    summarise(n = n(),
+              completed_completeness_rate = round(sum(completeness == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                comp = sum(completeness == 1, na.rm = TRUE),
+                comp_ratio = comp / n,
+                .groups = 'drop')
+    
+    comp_ratio <- mean(d$comp_ratio, na.rm = TRUE)
+    return(comp_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+
+
+result_comp_ci_model(df1)
+result_comp_ci_model(df2)
+```
+
+## Result_comp
+```{r}
+set.seed(729)
+result_comp_ci <- function(df) {
+  filtered_data <- df
+  
+  avg_result_model <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(n = n(),
+              completed_completeness_rate = round(sum(completeness == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                comp = sum(completeness == 1, na.rm = TRUE),
+                comp_ratio = comp / n,
+                .groups = 'drop')
+    
+    comp_ratio <- mean(d$comp_ratio, na.rm = TRUE)
+    return(comp_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+
+
+result_comp_ci(df1)
+result_comp_ci(df2)
+```
+
+
+## Result_str
+```{r}
+set.seed(729)
+result_str_ci <- function(df) {
+  filtered_data <- df
+  
+  avg_result_model <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(n = n(),
+              completed_str_rate = round(sum(structural_compliance == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                str = sum(structural_compliance == 1, na.rm = TRUE),
+                str_ratio = str / n,
+                .groups = 'drop')
+    
+    str_ratio <- mean(d$str_ratio, na.rm = TRUE)
+    return(str_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(gpt_version) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+result_str_ci(df1)
+```
+
+## Result_few_shot
+```{r}
+set.seed(729)
+result_str_ci_shot <- function(df) {
+  filtered_data <- df %>% filter(gpt_version == 'gpt-3.5-turbo')
+  
+  avg_result_model <- filtered_data %>%
+    group_by(prompt) %>%
+    summarise(n = n(),
+              completed_str_rate = round(sum(structural_compliance == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                str = sum(structural_compliance == 1, na.rm = TRUE),
+                str_ratio = str / n,
+                .groups = 'drop')
+    
+    str_ratio <- mean(d$str_ratio, na.rm = TRUE)
+    return(str_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(prompt) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+result_str_ci_shot(df_shot)
+```
+
+## result_old_new
+```{r}
+set.seed(729)
+result_acc_ci_on <- function(df) {
+  filtered_data <- df 
+  
+  avg_result_model <- filtered_data %>%
+    group_by(indication) %>%
+    summarise(n = n(),
+              completed_acc_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+              .groups = 'drop')
+  
+  # Define the bootstrap function
+  boot_fn <- function(data, index) {
+    d <- data[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                acc = sum(accuracy == 1, na.rm = TRUE),
+                acc_ratio = acc / n,
+                .groups = 'drop')
+    
+    acc_ratio <- mean(d$acc_ratio, na.rm = TRUE)
+    return(acc_ratio)
+  }
+  
+  # Function to calculate CIs for each group
+  calc_ci <- function(data) {
+    boot_result <- boot(data, boot_fn, R = 100)
+    ci <- boot.ci(boot_result, type = 'basic')$basic[4:5]
+    return(ci)
+  }
+  
+  # Apply CI calculation to each group
+  ci_results <- filtered_data %>%
+    group_by(indication) %>%
+    summarise(ci = list(calc_ci(cur_data())),
+              .groups = 'drop') %>%
+    unnest_wider(ci, names_sep = "_") %>%
+    rename(ci_lower = ci_1, ci_upper = ci_2)
+  
+  # Combine the results into a list for easy access
+  final_results <- list(avg_results = avg_result_model, ci_results = ci_results)
+  return(final_results)
+}
+result_acc_ci_on(old_new_df)
+```
+
+# Overall Accuacy top10
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 10) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 10) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 10) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 10) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat' & top_n == 10) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat' & top_n == 10) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat' & top_n == 10) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+```
+
+# Overall Accuacy top50
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 50) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 50) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 50) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 50) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat' & top_n == 50) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat' & top_n == 50) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat' & top_n == 50) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            overall_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(overall_accuracy_rate))
+```
+
+# Completed Accuacy top10
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 10 & completeness == 1) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 10 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 10 & completeness == 1) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 10 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat' & top_n == 10 & completeness == 1) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat' & top_n == 10 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat' & top_n == 10 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+```
+
+# Completed Accuacy top50
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 50 & completeness == 1) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo' & top_n == 50 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 50 & completeness == 1) %>%
+  select(prompt, accuracy) %>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4' & top_n == 50 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat' & top_n == 50 & completeness == 1) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat' & top_n == 50 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat' & top_n == 50 & completeness == 1) %>%
+  select(input_type, accuracy) %>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completed_accuracy_rate = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2)) %>%
+  arrange(desc(completed_accuracy_rate))
+```
+
+# Completeness
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate)) 
+```
+
+
+# Str_compliance
+```{r}
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df1 %>% filter(gpt_version == 'gpt-3.5-turbo')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(prompt) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df1 %>% filter(gpt_version == 'gpt-4')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-7b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-13b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat')%>%
+  group_by(top_n) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+
+df2 %>% filter(gpt_version == 'llama-2-70b-chat')%>%
+  group_by(input_type) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+```
+
+
+# Institution
+```{r}
+df_d %>% 
+  filter(top_n == 10 & input_type == 'hpo_concepts') %>% 
+  group_by(institution, gpt_version) %>%
+  summarise(n = n(),
+            oacc = round((sum(accuracy == 1, na.rm = T) / n) * 100, 2))
+
+df_d %>% 
+  filter(top_n == 50 & input_type == 'hpo_concepts') %>% 
+  group_by(institution, gpt_version) %>%
+  summarise(n = n(),
+            oacc = round((sum(accuracy == 1, na.rm = T) / n) * 100, 2))
+
+df_d %>% 
+  filter(completeness == 1 & top_n == 10 & input_type == 'hpo_concepts') %>%
+  group_by(institution, gpt_version) %>%
+  summarise(n = n(),
+            acc = round((sum(accuracy == 1, na.rm = T) / n) * 100, 2))
+
+df_d %>% 
+  filter(completeness == 1 & top_n == 50 & input_type == 'hpo_concepts') %>%
+  group_by(institution, gpt_version) %>%
+  summarise(n = n(),
+            acc = round((sum(accuracy == 1, na.rm = T) / n) * 100, 2))
+
+df_d %>% filter(input_type == 'hpo_concepts') %>%
+  select(institution, completeness) %>%
+  group_by(institution) %>%
+  summarise(n = n(),
+            completeness_rate = round(sum(completeness == 1) / n * 100, 2)) %>%
+  arrange(desc(completeness_rate))
+
+df_d %>% filter(input_type == 'hpo_concepts') %>%
+  select(institution, structural_compliance) %>%
+  group_by(institution) %>%
+  summarise(n = n(),
+            str_compliance_rate = round(sum(structural_compliance == 1) / n * 100, 2)) %>%
+  arrange(desc(str_compliance_rate))
+```
+
+
+# Gene & Supp1
+```{r}
+or_function <- function(df, llm_model) {
+  model_df <- df %>%
+    filter(gpt_version == llm_model)
+  K <- dim(model_df)[1]
+  M <- dim(model_df %>% filter(accuracy == 1))[1]
+  
+  model_df %>%
+    group_by(true_gene) %>%
+    summarise(k_i = n(),
+              o_i = sum(accuracy == 1, na.rm = TRUE),
+              M = M,
+              K = K,
+              e_i = M * (k_i/K),
+              odds_ratio = round((o_i/e_i),2)) %>%
+    arrange(desc(odds_ratio))
+}
+
+or_function(df1, 'gpt-4')
+or_function(df1, 'gpt-3.5-turbo')
+or_function(df2, 'llama-2-7b-chat')
+or_function(df2, 'llama-2-13b-chat')
+or_function(df2, 'llama-2-70b-chat')
+```
+
+```{r}
+g4 <- or_function(df1, 'gpt-4')
+g3 <- or_function(df1, 'gpt-3.5-turbo')
+l7 <- or_function(df2, 'llama-2-7b-chat')
+l13 <- or_function(df2, 'llama-2-13b-chat')
+l70 <- or_function(df2, 'llama-2-70b-chat')
+or_llm <- rbind(g3,g4,l7,l13,l70)
+#write.csv(or_llm,,file="supplementary1.csv")
+```
+
+
+# Supp 2
+```{r}
+set.seed(729)
+oacc_ci <- function(df, a, b) {
+  filtered_data <- df %>% filter(gpt_version == a & top_n == b)
+  # Bootstrapping function using the provided boot_fn
+  boot_fn <- function(df, index) {
+    d <- df[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                oacc = sum(accuracy == 1, na.rm = TRUE),
+                oacc_ratio = oacc / n)
+    
+    oacc_ratio <- mean(d$oacc_ratio, na.rm = TRUE)
+    
+    return(oacc_ratio)
+  }
+  
+  # Function to calculate mean and bootstrap CI
+  calc_mean_ci <- function(data, group_var) {
+    groups <- data %>% group_by_at(group_var) %>% group_keys()
+    
+    avg_result <- data %>%
+      group_by_at(group_var) %>%
+      summarise(
+        n = n(),
+        oacc_avg = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+        .groups = 'drop'
+      )
+    
+    ci_results <- lapply(1:nrow(groups), function(i) {
+      group_data <- data %>% filter(!!rlang::sym(group_var) == groups[[1]][i])
+      boot_res <- boot(group_data, boot_fn, R = 100)
+      oacc_ci <- boot.ci(boot_res, type = 'basic')$basic[4:5]
+      return(c(oacc_ci_lower = oacc_ci[1], oacc_ci_upper = oacc_ci[2]))
+    })
+    
+    ci_df <- do.call(rbind, ci_results)
+    
+    avg_result <- cbind(avg_result, ci_df)
+    
+    return(avg_result)
+  }
+  
+  oavg_result_prompt <- calc_mean_ci(filtered_data, 'prompt')
+  oavg_result_input <- calc_mean_ci(filtered_data, 'input_type')
+  
+  combined_results <- list(prompt = oavg_result_prompt, input = oavg_result_input)
+  
+  return(combined_results)
+}
+
+oacc_ci(df1, 'gpt-4', 10)
+oacc_ci(df1, 'gpt-3.5-turbo', 10)
+oacc_ci(df2, 'llama-2-7b-chat', 10)
+oacc_ci(df2, 'llama-2-13b-chat', 10)
+oacc_ci(df2, 'llama-2-70b-chat', 10)
+```
+
+
+# Supp 3
+```{r}
+set.seed(729)
+acc_ci <- function(df, a, b) {
+  filtered_data <- df %>% filter(gpt_version == a & top_n == b & completeness == 1)
+  
+  # Bootstrapping function using the provided boot_fn
+  boot_fn <- function(df, index) {
+    d <- df[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                acc = sum(accuracy == 1, na.rm = TRUE),
+                acc_ratio = acc / n)
+    
+    acc_ratio <- mean(d$acc_ratio, na.rm = TRUE)
+    
+    return(acc_ratio)
+  }
+  
+  # Function to calculate mean and bootstrap CI
+  calc_mean_ci <- function(data, group_var) {
+    groups <- data %>% group_by_at(group_var) %>% group_keys()
+    
+    avg_result <- data %>%
+      group_by_at(group_var) %>%
+      summarise(
+        n = n(),
+        acc_avg = round(sum(accuracy == 1, na.rm = TRUE) / n * 100, 2),
+        .groups = 'drop'
+      )
+    
+    ci_results <- lapply(1:nrow(groups), function(i) {
+      group_data <- data %>% filter(!!rlang::sym(group_var) == groups[[1]][i])
+      boot_res <- boot(group_data, boot_fn, R = 100)
+      acc_ci <- boot.ci(boot_res, type = 'basic')$basic[4:5]
+      return(c(acc_ci_lower = acc_ci[1], acc_ci_upper = acc_ci[2]))
+    })
+    
+    ci_df <- do.call(rbind, ci_results)
+    
+    avg_result <- cbind(avg_result, ci_df)
+    
+    return(avg_result)
+  }
+  
+  avg_result_prompt <- calc_mean_ci(filtered_data, 'prompt')
+  avg_result_input <- calc_mean_ci(filtered_data, 'input_type')
+  
+  combined_results <- list(prompt = avg_result_prompt, input = avg_result_input)
+  
+  return(combined_results)
+}
+
+acc_ci(df1, 'gpt-4', 10)
+acc_ci(df1, 'gpt-3.5-turbo', 10)
+acc_ci(df2, 'llama-2-7b-chat', 10)
+acc_ci(df2, 'llama-2-13b-chat', 10)
+acc_ci(df2, 'llama-2-70b-chat', 10)
+```
+
+# Supp 4
+```{r}
+set.seed(729)
+oacc_ci(df1, 'gpt-4', 50)
+oacc_ci(df1, 'gpt-3.5-turbo', 50)
+oacc_ci(df2, 'llama-2-7b-chat', 50)
+oacc_ci(df2, 'llama-2-13b-chat', 50)
+oacc_ci(df2, 'llama-2-70b-chat', 50)
+```
+# Supp 5
+```{r}
+set.seed(729)
+acc_ci(df1, 'gpt-4', 50)
+acc_ci(df1, 'gpt-3.5-turbo', 50)
+acc_ci(df2, 'llama-2-7b-chat', 50)
+acc_ci(df2, 'llama-2-13b-chat', 50)
+acc_ci(df2, 'llama-2-70b-chat', 50)
+```
+
+#Supp 6 & 7
+```{r}
+set.seed(729)
+comp_str_ci <- function(df, a) {
+  filtered_data <- df %>% filter(gpt_version == a)
+  
+  # Bootstrapping function using the provided boot_fn
+  boot_fn <- function(df, index) {
+    d <- df[index, ]
+    d <- d %>%
+      group_by(iteration) %>%
+      summarise(n = n(),
+                comp = sum(completeness == 1, na.rm = TRUE),
+                comp_ratio = comp / n,
+                str = sum(structural_compliance == 1, na.rm = TRUE),
+                str_ratio = str / n)
+    
+    comp_ratio <- mean(d$comp_ratio, na.rm = TRUE)
+    str_ratio <- mean(d$str_ratio, na.rm = TRUE)
+    
+    return(c(comp_ratio, str_ratio))
+  }
+  
+  # Function to calculate mean and bootstrap CI
+  calc_mean_ci <- function(data, group_var) {
+    groups <- data %>% group_by_at(group_var) %>% group_keys()
+    
+    avg_result <- data %>%
+      group_by_at(group_var) %>%
+      summarise(
+        n = n(),
+        comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+        str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+        .groups = 'drop'
+      )
+    
+    ci_results <- lapply(1:nrow(groups), function(i) {
+      group_data <- data %>% filter(!!rlang::sym(group_var) == groups[[1]][i])
+      boot_res <- boot(group_data, boot_fn, R = 100)
+      comp_ci <- boot.ci(boot_res, index = 1, type = 'basic')$basic[4:5]
+      str_ci <- boot.ci(boot_res, index = 2, type = 'basic')$basic[4:5]
+      return(c(comp_ci_lower = comp_ci[1], comp_ci_upper = comp_ci[2], str_ci_lower = str_ci[1], str_ci_upper = str_ci[2]))
+    })
+    
+    ci_df <- do.call(rbind, ci_results)
+    
+    avg_result <- cbind(avg_result, ci_df)
+    
+    return(avg_result)
+  }
+  
+  avg_result_prompt <- calc_mean_ci(filtered_data, 'prompt')
+  avg_result_top <- calc_mean_ci(filtered_data, 'top_n')
+  avg_result_input <- calc_mean_ci(filtered_data, 'input_type')
+  
+  combined_results <- list(prompt = avg_result_prompt, top = avg_result_top, input = avg_result_input)
+  
+  return(combined_results)
+}
+
+comp_str_ci(df1, 'gpt-4')
+comp_str_ci(df1, 'gpt-3.5-turbo')
+comp_str_ci(df2, 'llama-2-7b-chat')
+comp_str_ci(df2, 'llama-2-13b-chat')
+comp_str_ci(df2, 'llama-2-70b-chat')
+```
+
+# Supp 8
+```{r}
+avg_sd <- function(df, a, b, c, d) {
+  df %>%
+    filter(gpt_version == a, input_type == b, prompt == c, top_n == d) %>%
+    summarise(n = n(),
+              comp_avg = round(mean(completeness == 1, na.rm = TRUE) * 100, 2),
+              comp_sd = round(sd(completeness, na.rm = TRUE),2),
+              oacc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              oacc_sd = round(sqrt(sum(accuracy == 1, na.rm = TRUE) * (1 - sum(accuracy == 1, na.rm = TRUE) / n) / n),2),
+              str_avg = round(mean(structural_compliance == 1, na.rm = TRUE) * 100, 2),
+              str_sd = round(sd(structural_compliance, na.rm = TRUE),2)
+              )
+}
+
+avg_sd_acc <- function(df, a, b, c, d) {
+  df %>%
+    filter(completeness == 1, gpt_version == a, input_type == b, prompt == c, top_n == d) %>%
+    summarise(n = n(),
+              acc_avg = round(sum(accuracy == 1, na.rm = TRUE)/n * 100, 2),
+              acc_sd = round(sd(accuracy, na.rm = TRUE),2)
+              )
+}
+
+
+
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'a', 10)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'a', 50)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'b', 10)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'b', 50)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'c', 10)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'c', 50)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'd', 10)
+avg_sd(df1, 'gpt-4', 'hpo_concepts', 'd', 50)
+avg_sd(df1, 'gpt-4', 'free_text', 'a', 10)
+avg_sd(df1, 'gpt-4', 'free_text', 'a', 50)
+avg_sd(df1, 'gpt-4', 'free_text', 'b', 10)
+avg_sd(df1, 'gpt-4', 'free_text', 'b', 50)
+avg_sd(df1, 'gpt-4', 'free_text', 'c', 10)
+avg_sd(df1, 'gpt-4', 'free_text', 'c', 50)
+avg_sd(df1, 'gpt-4', 'free_text', 'd', 10)
+avg_sd(df1, 'gpt-4', 'free_text', 'd', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'a', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'a', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'b', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'b', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'c', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'c', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'd', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'd', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'a', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'a', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'b', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'b', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'c', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'c', 50)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'd', 10)
+avg_sd(df1, 'gpt-3.5-turbo', 'free_text', 'd', 50)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'a', 10)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'a', 50)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'b', 10)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'b', 50)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'c', 10)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'c', 50)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'd', 10)
+avg_sd_acc(df1, 'gpt-4', 'hpo_concepts', 'd', 50)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'a', 10)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'a', 50)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'b', 10)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'b', 50)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'c', 10)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'c', 50)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'd', 10)
+avg_sd_acc(df1, 'gpt-4', 'free_text', 'd', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'a', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'a', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'b', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'b', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'c', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'c', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'd', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'hpo_concepts', 'd', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'a', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'a', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'b', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'b', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'c', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'c', 50)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'd', 10)
+avg_sd_acc(df1, 'gpt-3.5-turbo', 'free_text', 'd', 50)
+avg_sd_acc(df2, 'llama-2-7b-chat', 'hpo_concepts', 'd', 10)
+avg_sd_acc(df2, 'llama-2-7b-chat', 'hpo_concepts', 'd', 50)
+avg_sd_acc(df2, 'llama-2-7b-chat', 'free_text', 'd', 10)
+avg_sd_acc(df2, 'llama-2-7b-chat', 'free_text', 'd', 50)
+avg_sd_acc(df2, 'llama-2-13b-chat', 'hpo_concepts', 'd', 10)
+avg_sd_acc(df2, 'llama-2-13b-chat', 'hpo_concepts', 'd', 50)
+avg_sd_acc(df2, 'llama-2-13b-chat', 'free_text', 'd', 10)
+avg_sd_acc(df2, 'llama-2-13b-chat', 'free_text', 'd', 50)
+avg_sd_acc(df2, 'llama-2-70b-chat', 'hpo_concepts', 'd', 10)
+avg_sd_acc(df2, 'llama-2-70b-chat', 'hpo_concepts', 'd', 50)
+avg_sd_acc(df2, 'llama-2-70b-chat', 'free_text', 'd', 10)
+avg_sd_acc(df2, 'llama-2-70b-chat', 'free_text', 'd', 50)
+avg_sd(df2, 'llama-2-7b-chat', 'hpo_concepts', 'd', 10)
+avg_sd(df2, 'llama-2-7b-chat', 'hpo_concepts', 'd', 50)
+avg_sd(df2, 'llama-2-7b-chat', 'free_text', 'd', 10)
+avg_sd(df2, 'llama-2-7b-chat', 'free_text', 'd', 50)
+avg_sd(df2, 'llama-2-13b-chat', 'hpo_concepts', 'd', 10)
+avg_sd(df2, 'llama-2-13b-chat', 'hpo_concepts', 'd', 50)
+avg_sd(df2, 'llama-2-13b-chat', 'free_text', 'd', 10)
+avg_sd(df2, 'llama-2-13b-chat', 'free_text', 'd', 50)
+avg_sd(df2, 'llama-2-70b-chat', 'hpo_concepts', 'd', 10)
+avg_sd(df2, 'llama-2-70b-chat', 'hpo_concepts', 'd', 50)
+avg_sd(df2, 'llama-2-70b-chat', 'free_text', 'd', 10)
+avg_sd(df2, 'llama-2-70b-chat', 'free_text', 'd', 50)
+```
