@@ -1,39 +1,39 @@
-gpt_version,experiment,top_n,prompt,input_type,col_count,sum_count,nonzero_count,difference_ratio,nonzero_difference_ratio
-gpt-4,fewshot,10,e,hpo_concepts,127,150,127,0.8466666666666667,1.0
-llama-2-7b-chat,llama2,10,d,hpo_concepts,1,276,1,0.0036231884057971015,1.0
-llama-2-70b-chat,llama2,50,d,hpo_concepts,2,276,2,0.007246376811594203,1.0
-llama-2-70b-chat,llama2,50,d,free_text,1,125,1,0.008,1.0
-llama-2-70b-chat,llama2,10,d,hpo_concepts,1,276,1,0.0036231884057971015,1.0
-gpt-3.5-turbo,gpt,10,d,hpo_concepts,1,276,1,0.0036231884057971015,1.0
-llama-2-70b-chat,llama2,10,d,free_text,1,125,1,0.008,1.0
-llama-2-13b-chat,llama2,50,d,free_text,5,125,5,0.04,1.0
-gpt-3.5-turbo,gpt,50,d,free_text,1,125,1,0.008,1.0
-gpt-3.5-turbo,fewshot,10,e,hpo_concepts,130,153,133,0.8496732026143791,0.9774436090225563
-llama-2-7b-chat,llama2,50,d,hpo_concepts,4,276,5,0.014492753623188406,0.8
-gpt-4,gpt,50,a,free_text,82,125,105,0.656,0.780952380952381
-gpt-4,gpt,50,d,free_text,80,125,109,0.64,0.7339449541284404
-gpt-4,gpt,50,c,hpo_concepts,180,276,251,0.6521739130434783,0.7171314741035857
-llama-2-13b-chat,llama2,50,d,hpo_concepts,5,276,7,0.018115942028985508,0.7142857142857143
-gpt-4,gpt,50,a,hpo_concepts,162,276,234,0.5869565217391305,0.6923076923076923
-gpt-4,gpt,50,b,free_text,76,125,110,0.608,0.6909090909090909
-gpt-4,gpt,50,d,hpo_concepts,161,276,240,0.5833333333333334,0.6708333333333333
-gpt-4,gpt,50,c,free_text,68,125,104,0.544,0.6538461538461539
-gpt-4,gpt,50,b,hpo_concepts,154,276,245,0.5579710144927537,0.6285714285714286
-gpt-3.5-turbo,gpt,10,c,free_text,5,125,11,0.04,0.45454545454545453
-gpt-3.5-turbo,gpt,50,b,hpo_concepts,26,276,71,0.09420289855072464,0.36619718309859156
-gpt-3.5-turbo,gpt,50,c,free_text,3,125,9,0.024,0.3333333333333333
-gpt-3.5-turbo,gpt,10,c,hpo_concepts,14,276,69,0.050724637681159424,0.2028985507246377
-gpt-3.5-turbo,gpt,50,c,hpo_concepts,10,276,51,0.036231884057971016,0.19607843137254902
-gpt-3.5-turbo,gpt,10,b,free_text,8,125,47,0.064,0.1702127659574468
-gpt-3.5-turbo,gpt,10,b,hpo_concepts,19,276,117,0.06884057971014493,0.1623931623931624
-gpt-3.5-turbo,gpt,50,a,free_text,9,125,56,0.072,0.16071428571428573
-gpt-3.5-turbo,gpt,50,a,hpo_concepts,31,276,195,0.11231884057971014,0.15897435897435896
-gpt-3.5-turbo,gpt,50,b,free_text,6,125,40,0.048,0.15
-gpt-3.5-turbo,gpt,10,a,free_text,7,125,64,0.056,0.109375
-gpt-3.5-turbo,gpt,10,a,hpo_concepts,16,276,224,0.057971014492753624,0.07142857142857142
-gpt-3.5-turbo,newgpt,10,d,free_text,8,221,221,0.03619909502262444,0.03619909502262444
-text-embedding-3-small-phenotypes,rag,10,d,hpo_concepts,7,276,267,0.025362318840579712,0.026217228464419477
-text-embedding-3-large-phenotypes,rag,10,d,hpo_concepts,7,276,274,0.025362318840579712,0.025547445255474453
-text-embedding-3-small-genes,rag,10,d,hpo_concepts,6,276,272,0.021739130434782608,0.022058823529411766
-gpt-4,gpt,10,d,free_text,1,125,125,0.008,0.008
-text-embedding-3-large-genes,rag,10,d,hpo_concepts,1,276,274,0.0036231884057971015,0.0036496350364963502
+GPT Version,Experiment,Top N,Prompt,Input Type,Non-consistent Experiment,Total Experiment Count,Nonzero Experiment Count,Non-consistent Rate,Non-consistent Rate in Nonzeros
+gpt-4,fewshot,10,Few-Shot Prompts,HPO,127,150,127,0.85,1.0
+llama-2-7b-chat,llama2,10,Original + Role + Instruction,HPO,1,276,1,0.0,1.0
+llama-2-70b-chat,llama2,50,Original + Role + Instruction,HPO,2,276,2,0.01,1.0
+llama-2-70b-chat,llama2,50,Original + Role + Instruction,Free-text,1,125,1,0.01,1.0
+llama-2-70b-chat,llama2,10,Original + Role + Instruction,HPO,1,276,1,0.0,1.0
+gpt-3.5-turbo,gpt,10,Original + Role + Instruction,HPO,1,276,1,0.0,1.0
+llama-2-70b-chat,llama2,10,Original + Role + Instruction,Free-text,1,125,1,0.01,1.0
+llama-2-13b-chat,llama2,50,Original + Role + Instruction,Free-text,5,125,5,0.04,1.0
+gpt-3.5-turbo,gpt,50,Original + Role + Instruction,Free-text,1,125,1,0.01,1.0
+gpt-3.5-turbo,fewshot,10,Few-Shot Prompts,HPO,130,153,133,0.85,0.98
+llama-2-7b-chat,llama2,50,Original + Role + Instruction,HPO,4,276,5,0.01,0.8
+gpt-4,gpt,50,Original,Free-text,82,125,105,0.66,0.78
+gpt-4,gpt,50,Original + Role + Instruction,Free-text,80,125,109,0.64,0.73
+gpt-4,gpt,50,Original + Instruction,HPO,180,276,251,0.65,0.72
+llama-2-13b-chat,llama2,50,Original + Role + Instruction,HPO,5,276,7,0.02,0.71
+gpt-4,gpt,50,Original + Role,Free-text,76,125,110,0.61,0.69
+gpt-4,gpt,50,Original,HPO,162,276,234,0.59,0.69
+gpt-4,gpt,50,Original + Role + Instruction,HPO,161,276,240,0.58,0.67
+gpt-4,gpt,50,Original + Instruction,Free-text,68,125,104,0.54,0.65
+gpt-4,gpt,50,Original + Role,HPO,154,276,245,0.56,0.63
+gpt-3.5-turbo,gpt,10,Original + Instruction,Free-text,5,125,11,0.04,0.45
+gpt-3.5-turbo,gpt,50,Original + Role,HPO,26,276,71,0.09,0.37
+gpt-3.5-turbo,gpt,50,Original + Instruction,Free-text,3,125,9,0.02,0.33
+gpt-3.5-turbo,gpt,50,Original + Instruction,HPO,10,276,51,0.04,0.2
+gpt-3.5-turbo,gpt,10,Original + Instruction,HPO,14,276,69,0.05,0.2
+gpt-3.5-turbo,gpt,10,Original + Role,Free-text,8,125,47,0.06,0.17
+gpt-3.5-turbo,gpt,50,Original,Free-text,9,125,56,0.07,0.16
+gpt-3.5-turbo,gpt,10,Original + Role,HPO,19,276,117,0.07,0.16
+gpt-3.5-turbo,gpt,50,Original,HPO,31,276,195,0.11,0.16
+gpt-3.5-turbo,gpt,50,Original + Role,Free-text,6,125,40,0.05,0.15
+gpt-3.5-turbo,gpt,10,Original,Free-text,7,125,64,0.06,0.11
+gpt-3.5-turbo,gpt,10,Original,HPO,16,276,224,0.06,0.07
+gpt-3.5-turbo,newgpt,10,Original + Role + Instruction,Free-text,9,251,251,0.04,0.04
+text-embedding-3-large-phenotypes,rag,10,Original + Role + Instruction,HPO,7,276,274,0.03,0.03
+text-embedding-3-small-phenotypes,rag,10,Original + Role + Instruction,HPO,7,276,267,0.03,0.03
+text-embedding-3-small-genes,rag,10,Original + Role + Instruction,HPO,6,276,272,0.02,0.02
+gpt-4,gpt,10,Original + Role + Instruction,Free-text,1,125,125,0.01,0.01
+text-embedding-3-large-genes,rag,10,Original + Role + Instruction,HPO,1,276,274,0.0,0.0
